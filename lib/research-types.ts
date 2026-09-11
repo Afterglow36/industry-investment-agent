@@ -54,6 +54,7 @@ export type ResearchResult = {
 
 export type StoredTask = {
   id: string;
+  provider?: "openai" | "qwen";
   industry: string;
   region: string;
   entity: string;

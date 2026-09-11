@@ -50,6 +50,16 @@ function emit(controller: ReadableStreamDefaultController, encoder: TextEncoder,
   controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
 }
 
+function parseReport(raw: string) {
+  const clean = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  try { return JSON.parse(clean); } catch {
+    const start = clean.indexOf("{");
+    const end = clean.lastIndexOf("}");
+    if (start < 0 || end <= start) throw new Error("模型没有返回可解析的研究数据库，请重试");
+    return JSON.parse(clean.slice(start, end + 1));
+  }
+}
+
 export async function POST(request: Request) {
   const form = await request.formData();
   const taskId = String(form.get("taskId") || crypto.randomUUID());
@@ -57,15 +67,17 @@ export async function POST(request: Request) {
   const region = String(form.get("region") || "全国").trim();
   const entity = String(form.get("entity") || "产业投资主体").trim();
   const focus = String(form.get("focus") || "产业链机会、区域布局、可落地项目与尽调优先级").trim();
+  const provider = form.get("provider") === "qwen" ? "qwen" : "openai";
   const mode = form.get("mode") === "update" ? "update" : "full";
   const updateScope = String(form.get("updateScope") || "");
   const existing = String(form.get("existing") || "");
   const files = form.getAll("files").filter((x): x is File => x instanceof File);
   if (!industry) return Response.json({ error: "请输入目标产业" }, { status: 400 });
 
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = provider === "qwen" ? process.env.DASHSCOPE_API_KEY : process.env.OPENAI_API_KEY;
   if (!apiKey) {
-    return Response.json({ error: "真实研究后端尚未配置 OPENAI_API_KEY。请在 Sites 的服务端环境变量中添加密钥。", code: "MODEL_NOT_CONFIGURED" }, { status: 503 });
+    const keyName = provider === "qwen" ? "DASHSCOPE_API_KEY" : "OPENAI_API_KEY";
+    return Response.json({ error: `真实研究后端尚未配置 ${keyName}。请在 Sites 的服务端环境变量中添加秘密变量。`, code: "MODEL_NOT_CONFIGURED" }, { status: 503 });
   }
 
   const encoder = new TextEncoder();
@@ -82,31 +94,52 @@ export async function POST(request: Request) {
           totalBytes += file.size;
           if (totalBytes > 18 * 1024 * 1024) throw new Error("内部材料合计不能超过18MB");
           const bytes = new Uint8Array(await file.arrayBuffer());
-          let binary = "";
-          for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-          content.push({ type: "input_file", filename: file.name, file_data: `data:${file.type || "application/octet-stream"};base64,${btoa(binary)}` });
+          if (provider === "qwen") {
+            if (!/\.(txt|md|csv|json)$/i.test(file.name)) throw new Error("千问模式当前支持直接上传 TXT、Markdown、CSV、JSON；PDF、Word、PPT、Excel 请先使用 OpenAI 模式，或后续接入百炼知识库。");
+            content.push({ type: "input_text", text: `\n\n【内部材料：${file.name}】\n${new TextDecoder().decode(bytes).slice(0, 180000)}` });
+          } else {
+            let binary = "";
+            for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+            content.push({ type: "input_file", filename: file.name, file_data: `data:${file.type || "application/octet-stream"};base64,${btoa(binary)}` });
+          }
         }
         if (files.length) emit(controller, encoder, { type: "progress", progress: 14, stage: `已读取 ${files.length} 份内部材料` });
         else emit(controller, encoder, { type: "progress", progress: 14, stage: "已确认研究边界与输出结构" });
 
-        const apiResponse = await fetch("https://api.openai.com/v1/responses", {
+        const endpoint = provider === "qwen"
+          ? `${(process.env.DASHSCOPE_BASE_URL || "https://dashscope.aliyuncs.com/compatible-mode/v1").replace(/\/$/, "")}/responses`
+          : "https://api.openai.com/v1/responses";
+        const sharedInput = [{ role: "user", content }];
+        const qwenBody = {
+          model: process.env.QWEN_MODEL || "qwen3.8-max",
+          instructions: `${instructions}\n\n你必须只输出一个可被 JSON.parse 解析的JSON对象，不要输出Markdown代码围栏或解释文字。对象必须严格遵循以下JSON Schema并补齐全部必填字段：\n${JSON.stringify(reportSchema)}`,
+          input: sharedInput,
+          tools: [{ type: "web_search" }, { type: "web_extractor" }, { type: "code_interpreter" }],
+          tool_choice: "auto",
+          enable_thinking: true,
+          max_output_tokens: 20000,
+          stream: true,
+          store: false,
+        };
+        const openaiBody = {
+          model: process.env.OPENAI_MODEL || "gpt-6-astra",
+          instructions,
+          input: sharedInput,
+          tools: [{ type: "web_search", search_context_size: "high" }],
+          tool_choice: "auto",
+          include: ["web_search_call.action.sources"],
+          max_tool_calls: 18,
+          max_output_tokens: 20000,
+          reasoning: { effort: "high" },
+          text: { verbosity: "low", format: { type: "json_schema", name: "industry_investment_report", strict: true, schema: reportSchema } },
+          stream: true,
+          store: false,
+          prompt_cache_key: "industry-investment-agent-v2",
+        };
+        const apiResponse = await fetch(endpoint, {
           method: "POST",
           headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({
-            model: process.env.OPENAI_MODEL || "gpt-6-astra",
-            instructions,
-            input: [{ role: "user", content }],
-            tools: [{ type: "web_search", search_context_size: "high" }],
-            tool_choice: "auto",
-            include: ["web_search_call.action.sources"],
-            max_tool_calls: 18,
-            max_output_tokens: 20000,
-            reasoning: { effort: "high" },
-            text: { verbosity: "low", format: { type: "json_schema", name: "industry_investment_report", strict: true, schema: reportSchema } },
-            stream: true,
-            store: false,
-            prompt_cache_key: "industry-investment-agent-v2",
-          }),
+          body: JSON.stringify(provider === "qwen" ? qwenBody : openaiBody),
         });
         if (!apiResponse.ok || !apiResponse.body) {
           const detail = await apiResponse.text();
@@ -134,6 +167,10 @@ export async function POST(request: Request) {
                 emit(controller, encoder, { type: "progress", progress: Math.min(28 + searches * 4, 64), stage: `正在进行第 ${searches} 轮证据检索` });
               } else if (event.type === "response.web_search_call.completed") {
                 emit(controller, encoder, { type: "progress", progress: Math.min(40 + searches * 4, 72), stage: "已核验一组公开来源" });
+              } else if (event.type === "response.web_extractor_call.in_progress" || event.type === "response.web_extractor_call.completed") {
+                emit(controller, encoder, { type: "progress", progress: Math.min(58 + searches * 3, 78), stage: "正在读取并核验网页正文" });
+              } else if (event.type === "response.code_interpreter_call.in_progress") {
+                emit(controller, encoder, { type: "progress", progress: 80, stage: "正在计算评分与经济性指标" });
               } else if (event.type === "response.output_text.delta") {
                 output += event.delta || "";
                 if (output.length % 5000 < 500) emit(controller, encoder, { type: "progress", progress: Math.min(76 + Math.floor(output.length / 4000), 92), stage: "正在构建四图五清单与评分数据库" });
@@ -146,7 +183,7 @@ export async function POST(request: Request) {
             }
           }
         }
-        const report = JSON.parse(output);
+        const report = parseReport(output);
         report.meta = { ...report.meta, taskId, industry, region, entity, mode, cutoff: new Date().toISOString().slice(0, 10), generatedAt: new Date().toISOString() };
         emit(controller, encoder, { type: "progress", progress: 96, stage: "正在生成数据库与PPT结构" });
         emit(controller, encoder, { type: "result", progress: 100, stage: "研究完成，可下载数据库和PPT", result: report });
