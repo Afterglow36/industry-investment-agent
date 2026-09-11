@@ -56,6 +56,7 @@ export async function POST(request: Request) {
   const industry = String(form.get("industry") || "").trim();
   const region = String(form.get("region") || "全国").trim();
   const entity = String(form.get("entity") || "产业投资主体").trim();
+  const focus = String(form.get("focus") || "产业链机会、区域布局、可落地项目与尽调优先级").trim();
   const mode = form.get("mode") === "update" ? "update" : "full";
   const updateScope = String(form.get("updateScope") || "");
   const existing = String(form.get("existing") || "");
@@ -74,7 +75,7 @@ export async function POST(request: Request) {
         emit(controller, encoder, { type: "progress", progress: 4, stage: "任务已进入研究队列" });
         const content: Array<Record<string, unknown>> = [{
           type: "input_text",
-          text: `${mode === "update" ? `对既有研究进行局部更新，范围：${updateScope}。保留未受影响的可靠内容，并更新来源与数据截止日。\n既有研究：${existing.slice(0, 120000)}` : "从零开展完整产业研究。"}\n\n任务ID：${taskId}\n产业：${industry}\n区域：${region}\n实施主体：${entity}\n当前日期：${new Date().toISOString().slice(0, 10)}\n请使用web检索获得最新可核验信息。`,
+          text: `${mode === "update" ? `对既有研究进行局部更新，范围：${updateScope}。保留未受影响的可靠内容，并更新来源与数据截止日。\n既有研究：${existing.slice(0, 120000)}` : "从零开展完整产业研究。"}\n\n任务ID：${taskId}\n产业：${industry}\n区域：${region}\n实施主体：${entity}\n研究重点：${focus}\n当前日期：${new Date().toISOString().slice(0, 10)}\n请使用web检索获得最新可核验信息。`,
         }];
         let totalBytes = 0;
         for (const file of files.slice(0, 8)) {
