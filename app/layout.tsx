@@ -2,16 +2,16 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://industry-investment-research-agent.prime-thyme-8533.chatgpt.site"),
-  title: "产业投资研究 Agent｜可追溯的四图五清单研究",
-  description: "面向地方国资、产业集团、园区与基金的可复用产业投资研究驾驶舱。",
+  metadataBase: new URL("https://industry-investment-research-agent.hust-qqh.chatgpt.site"),
+  title: "产业投资研究 Agent｜真实研究工作台",
+  description: "创建任意产业研究任务，上传内部材料，实时查看进度，并直接生成产业数据库与可编辑PPTX。",
   icons: { icon: "/favicon.png", shortcut: "/favicon.png" },
   openGraph: {
     title: "产业投资研究 Agent",
-    description: "让每一条产业判断，都能回到证据。",
-    images: [{ url: "https://industry-investment-research-agent.prime-thyme-8533.chatgpt.site/og.png", width: 1536, height: 1024, alt: "产业投资研究 Agent 证据链" }],
+    description: "任意产业研究、内部材料、实时进度、数据库与PPTX自动生成。",
+    images: [{ url: "https://industry-investment-research-agent.hust-qqh.chatgpt.site/og.png", width: 1536, height: 1024, alt: "产业投资研究 Agent 证据链" }],
   },
-  twitter: { card: "summary_large_image", title: "产业投资研究 Agent", description: "让每一条产业判断，都能回到证据。", images: ["https://industry-investment-research-agent.prime-thyme-8533.chatgpt.site/og.png"] },
+  twitter: { card: "summary_large_image", title: "产业投资研究 Agent", description: "真实产业研究工作台", images: ["https://industry-investment-research-agent.hust-qqh.chatgpt.site/og.png"] },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
