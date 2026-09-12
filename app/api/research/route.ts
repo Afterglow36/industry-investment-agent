@@ -4,6 +4,13 @@ import { getSseData, splitSseBlocks } from "../../../lib/sse";
 
 const DASHSCOPE_PAY_AS_YOU_GO_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
 const DASHSCOPE_TOKEN_PLAN_BASE_URL = "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1";
+const DEFAULT_QWEN_MAX_OUTPUT_TOKENS = 65536;
+
+function qwenMaxOutputTokens() {
+  const configured = Number(process.env.QWEN_MAX_OUTPUT_TOKENS);
+  if (!Number.isFinite(configured) || configured <= 0) return DEFAULT_QWEN_MAX_OUTPUT_TOKENS;
+  return Math.min(Math.floor(configured), 131072);
+}
 
 function isLocalRequest(request: Request) {
   const hostname = new URL(request.url).hostname;
@@ -176,7 +183,10 @@ export async function POST(request: Request) {
           tools: [{ type: "web_search" }, { type: "web_extractor" }, { type: "code_interpreter" }],
           tool_choice: "auto",
           enable_thinking: true,
-          max_output_tokens: 20000,
+          // Thinking tokens and the final JSON share this budget. 20k is too small
+          // for a tool-heavy four-maps/five-lists report, so keep a larger,
+          // model-safe default while allowing operators to tune it.
+          max_output_tokens: qwenMaxOutputTokens(),
           stream: true,
           store: false,
         };
@@ -249,7 +259,11 @@ export async function POST(request: Request) {
             if (!output) output = completedResponseText(event.response);
             progress(94, "模型研究完成，正在校验结构化结果");
           } else if (event.type === "response.incomplete") {
-            throw new Error(event.response?.incomplete_details?.reason || "模型输出未完整完成，请缩小研究范围后重试");
+            const reason = event.response?.incomplete_details?.reason;
+            if (reason === "max_output_tokens") {
+              throw new Error("模型已达到本次最大输出长度，未能完成全部四图五清单。系统已提高千问输出额度，请重新运行；若仍出现此提示，请缩小研究重点或改用局部更新模式。");
+            }
+            throw new Error(reason ? `模型输出未完整完成（${reason}），请重试` : "模型输出未完整完成，请缩小研究范围后重试");
           } else if (event.type === "response.failed") {
             throw new Error(event.response?.error?.message || "模型研究失败");
           }
