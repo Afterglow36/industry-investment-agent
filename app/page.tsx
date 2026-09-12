@@ -3,12 +3,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { downloadPptx, downloadXlsx } from "../lib/office";
 import type { ResearchResult, StoredTask } from "../lib/research-types";
+import { eldercareRobotSample } from "../lib/sample-eldercare-robot";
 import { getSseData, splitSseBlocks } from "../lib/sse";
 
 type Scope = "企业" | "政策" | "项目";
 const phases = ["定义边界", "读取材料", "公开检索", "证据核验", "四图五清单", "生成成果"];
 
-const sample: ResearchResult = {
+const legacyStorageSample: ResearchResult = {
   meta: { taskId: "sample-storage", industry: "新型储能", region: "湖北省", entity: "地方国资产业投资平台（示范）", mode: "full", cutoff: "2026-09-11", generatedAt: "2026-09-11T08:00:00Z" },
   executiveSummary: "以系统集成、项目运营和安全能力为优先切口；长时储能采用项目实证解锁；同质化电芯扩产暂缓进入。",
   verdicts: [
@@ -39,12 +40,15 @@ const sample: ResearchResult = {
   slides: [{ title: "封面", subtitle: "新型储能产业投资研究", bullets: [], evidenceIds: [] }],
 };
 
+const sample = eldercareRobotSample;
+void legacyStorageSample;
+
 function makeId() { return `R-${Date.now().toString(36).toUpperCase()}`; }
 function Badge({ children, tone = "blue" }: { children: React.ReactNode; tone?: string }) { return <span className={`badge badge-${tone}`}>{children}</span>; }
 
 export default function Home() {
   const [tasks, setTasks] = useState<StoredTask[]>([]);
-  const [selectedId, setSelectedId] = useState("sample-storage");
+  const [selectedId, setSelectedId] = useState("sample-eldercare-robot-hubei");
   const [showCreate, setShowCreate] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
   const [form, setForm] = useState<{ industry: string; region: string; entity: string; focus: string; provider: "qwen" | "openai" }>({ industry: "低空经济", region: "湖北省", entity: "地方国资产业投资平台", focus: "产业链机会、区域布局、可落地项目与尽调优先级", provider: "qwen" });
@@ -72,8 +76,8 @@ export default function Home() {
   useEffect(() => { if (tasks.length) localStorage.setItem("industry-research-tasks-v2", JSON.stringify(tasks.slice(0, 12))); }, [tasks]);
 
   const selectedTask = tasks.find(t => t.id === selectedId);
-  const result = selectedId === "sample-storage" ? sample : selectedTask?.result;
-  const activeTask = selectedId === "sample-storage" ? { id: "sample-storage", industry: "新型储能", region: "湖北省", entity: sample.meta.entity, status: "completed" as const, progress: 100, stage: "示范研究已完成", createdAt: sample.meta.generatedAt, updatedAt: sample.meta.generatedAt, fileNames: [], result: sample } : selectedTask;
+  const result = selectedId === sample.meta.taskId ? sample : selectedTask?.result;
+  const activeTask = selectedId === sample.meta.taskId ? { id: sample.meta.taskId, industry: sample.meta.industry, region: sample.meta.region, entity: sample.meta.entity, status: "completed" as const, progress: 100, stage: "示范研究已完成", createdAt: sample.meta.generatedAt, updatedAt: sample.meta.generatedAt, fileNames: [], result: sample } : selectedTask;
   const completed = tasks.filter(t => t.status === "completed").length;
   const totalRecords = result ? result.lists.reduce((n, l) => n + l.items.length, 0) + result.sources.length : 0;
 
@@ -137,20 +141,20 @@ export default function Home() {
 
   return <main className="app-shell">
     <header className="topbar">
-      <button className="brand" onClick={() => setSelectedId("sample-storage")}><span className="brand-seal">研</span><span><strong>产业投资研究 Agent</strong><small>LIVE RESEARCH WORKBENCH · PHASE 2</small></span></button>
+      <button className="brand" onClick={() => setSelectedId(sample.meta.taskId)}><span className="brand-seal">研</span><span><strong>产业投资研究 Agent</strong><small>LIVE RESEARCH WORKBENCH · PHASE 2</small></span></button>
       <div className="top-summary"><span><b>{tasks.length}</b> 研究任务</span><span><b>{completed}</b> 已完成</span><button className="primary-button" onClick={() => setShowCreate(true)}>＋ 创建研究任务</button></div>
     </header>
 
     <aside className="task-sidebar">
       <div className="sidebar-title"><span>RESEARCH TASKS</span><button onClick={() => setShowCreate(true)}>＋</button></div>
-      <button className={`task-card ${selectedId === "sample-storage" ? "active" : ""}`} onClick={() => setSelectedId("sample-storage")}><div><Badge tone="orange">示范</Badge><small>已完成</small></div><strong>新型储能</strong><span>湖北省 · 四图五清单</span><i><em style={{ width: "100%" }} /></i></button>
+      <button className={`task-card ${selectedId === sample.meta.taskId ? "active" : ""}`} onClick={() => setSelectedId(sample.meta.taskId)}><div><Badge tone="orange">示范</Badge><small>已完成</small></div><strong>养老机器人</strong><span>湖北省 · 增强四图五清单</span><i><em style={{ width: "100%" }} /></i></button>
       {tasks.map(task => <button key={task.id} className={`task-card ${selectedId === task.id ? "active" : ""}`} onClick={() => setSelectedId(task.id)}><div><Badge tone={task.status === "completed" ? "blue" : task.status === "failed" ? "red" : "orange"}>{task.status === "completed" ? "完成" : task.status === "failed" ? "失败" : "研究中"}</Badge><small>{task.provider === "qwen" ? "QWEN" : "OPENAI"} · {task.progress}%</small></div><strong>{task.industry}</strong><span>{task.region} · {task.fileNames.length}份材料</span><i><em style={{ width: `${task.progress}%` }} /></i></button>)}
       <div className="sidebar-note"><i />研究结果保存在当前浏览器；内部材料仅随本次研究请求发送。</div>
     </aside>
 
     <section className="workspace">
       {!activeTask ? <div className="empty-state"><span>研</span><h1>开始一项新的产业研究</h1><p>支持任意产业、任意区域和不同投资主体。</p><button className="primary-button" onClick={() => setShowCreate(true)}>创建研究任务</button></div> : <>
-        <div className="workspace-head"><div><div className="eyebrow"><Badge tone={activeTask.status === "completed" ? "blue" : activeTask.status === "failed" ? "red" : "orange"}>{activeTask.status === "completed" ? "研究已完成" : activeTask.status === "failed" ? "需要处理" : "Agent 正在运行"}</Badge><span>{activeTask.id} · {activeTask.provider === "qwen" ? "Qwen3.8-Max" : activeTask.id === "sample-storage" ? "示范数据" : "OpenAI"}</span></div><h1>{activeTask.industry}<small>产业投资研究</small></h1><p>{activeTask.region} · {activeTask.entity}</p></div><div className="head-actions">{result && <><button className="outline-button" onClick={() => downloadXlsx(result)}>下载数据库 .xlsx</button><button className="primary-button" onClick={() => downloadPptx(result)}>直接生成 PPTX ↘</button></>}</div></div>
+        <div className="workspace-head"><div><div className="eyebrow"><Badge tone={activeTask.status === "completed" ? "blue" : activeTask.status === "failed" ? "red" : "orange"}>{activeTask.status === "completed" ? "研究已完成" : activeTask.status === "failed" ? "需要处理" : "Agent 正在运行"}</Badge><span>{activeTask.id} · {activeTask.provider === "qwen" ? "Qwen3.8-Max" : activeTask.id === sample.meta.taskId ? "增强示范数据" : "OpenAI"}</span></div><h1>{activeTask.industry}<small>产业投资研究</small></h1><p>{activeTask.region} · {activeTask.entity}</p></div><div className="head-actions">{result && <><button className="outline-button" onClick={() => downloadXlsx(result)}>下载数据库 .xlsx</button><button className="primary-button" onClick={() => downloadPptx(result)}>直接生成 PPTX ↘</button></>}</div></div>
 
         {activeTask.status !== "completed" && <section className="run-panel"><div className="run-status"><div className={`agent-orb ${activeTask.status}`}><span>研</span></div><div><small>{activeTask.provider === "qwen" ? "QWEN3.8-MAX" : "OPENAI"} · 当前阶段</small><h2>{activeTask.stage}</h2><p>{activeTask.error || "研究过程会实时回传检索、核验和结构化进度。"}</p></div><strong>{activeTask.progress}%</strong></div><div className="master-progress"><i style={{ width: `${activeTask.progress}%` }} /></div><div className="phase-track">{phases.map((p, i) => <div className={i <= stageIndex ? "done" : ""} key={p}><span>{i < stageIndex ? "✓" : `0${i + 1}`}</span><b>{p}</b></div>)}</div>{activeTask.status === "running" && busy && <button className="outline-button retry" onClick={() => activeRequest.current?.abort()}>终止本次任务</button>}{activeTask.status === "failed" && <div className="recovery-actions">{activeTask.recoveryDraft && <button className="primary-button retry" disabled={busy} onClick={() => runResearch("full", undefined, activeTask)}>从94%检查点恢复</button>}<button className="outline-button retry" onClick={() => { setForm({ ...form, industry: activeTask.industry, region: activeTask.region, entity: activeTask.entity, provider: activeTask.provider || "openai" }); setShowCreate(true); }}>修改配置后重试</button></div>}</section>}
 
