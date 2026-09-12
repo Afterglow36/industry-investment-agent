@@ -5,11 +5,19 @@ import { getSseData, splitSseBlocks } from "../../../lib/sse";
 const DASHSCOPE_PAY_AS_YOU_GO_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
 const DASHSCOPE_TOKEN_PLAN_BASE_URL = "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1";
 const DEFAULT_QWEN_MAX_OUTPUT_TOKENS = 65536;
+const DEFAULT_RESEARCH_TOTAL_TIMEOUT_MINUTES = 60;
+const DEFAULT_RESEARCH_INACTIVITY_TIMEOUT_MINUTES = 5;
 
 function qwenMaxOutputTokens() {
   const configured = Number(process.env.QWEN_MAX_OUTPUT_TOKENS);
   if (!Number.isFinite(configured) || configured <= 0) return DEFAULT_QWEN_MAX_OUTPUT_TOKENS;
   return Math.min(Math.floor(configured), 131072);
+}
+
+function timeoutMinutes(name: string, fallback: number, minimum: number, maximum: number) {
+  const configured = Number(process.env[name]);
+  if (!Number.isFinite(configured) || configured <= 0) return fallback;
+  return Math.min(Math.max(Math.floor(configured), minimum), maximum);
 }
 
 function isLocalRequest(request: Request) {
@@ -132,14 +140,30 @@ export async function POST(request: Request) {
   const stream = new ReadableStream({
     async start(controller) {
       const upstreamController = new AbortController();
-      const onDisconnect = () => upstreamController.abort("client_disconnected");
+      const totalTimeoutMinutes = timeoutMinutes("RESEARCH_TOTAL_TIMEOUT_MINUTES", DEFAULT_RESEARCH_TOTAL_TIMEOUT_MINUTES, 10, 120);
+      const inactivityTimeoutMinutes = timeoutMinutes("RESEARCH_INACTIVITY_TIMEOUT_MINUTES", DEFAULT_RESEARCH_INACTIVITY_TIMEOUT_MINUTES, 2, 15);
+      const abortUpstream = (reason: string) => {
+        if (!upstreamController.signal.aborted) upstreamController.abort(reason);
+      };
+      const onDisconnect = () => abortUpstream("client_disconnected");
       request.signal.addEventListener("abort", onDisconnect, { once: true });
-      const timeout = setTimeout(() => upstreamController.abort("research_timeout"), 20 * 60 * 1000);
+      const totalTimeout = setTimeout(() => abortUpstream("research_total_timeout"), totalTimeoutMinutes * 60 * 1000);
+      let inactivityTimeout: ReturnType<typeof setTimeout> | undefined;
       let heartbeat: ReturnType<typeof setInterval> | undefined;
       let currentProgress = 0;
       let currentStage = "";
       let closed = false;
       const startedAt = Date.now();
+      let lastUpstreamActivityAt = startedAt;
+      const markUpstreamActivity = () => {
+        lastUpstreamActivityAt = Date.now();
+        if (inactivityTimeout) clearTimeout(inactivityTimeout);
+        inactivityTimeout = setTimeout(
+          () => abortUpstream("research_inactivity_timeout"),
+          inactivityTimeoutMinutes * 60 * 1000,
+        );
+      };
+      markUpstreamActivity();
       const safeEmit = (payload: unknown) => {
         if (closed) return;
         try { emit(controller, encoder, payload); } catch { closed = true; }
@@ -208,10 +232,14 @@ export async function POST(request: Request) {
         progress(18, "已提交研究请求，等待模型响应");
         heartbeat = setInterval(() => {
           const elapsedMinutes = Math.max(1, Math.floor((Date.now() - startedAt) / 60000));
+          const inactiveSeconds = Math.max(0, Math.floor((Date.now() - lastUpstreamActivityAt) / 1000));
+          const activityText = inactiveSeconds < 60
+            ? `${inactiveSeconds}秒前收到响应`
+            : `${Math.floor(inactiveSeconds / 60)}分钟前收到响应`;
           safeEmit({
             type: "progress",
             progress: currentProgress,
-            stage: `${currentStage} · 已运行 ${elapsedMinutes} 分钟`,
+            stage: `${currentStage} · 已运行 ${elapsedMinutes} 分钟 · 模型${activityText}`,
             heartbeat: true,
           });
         }, 15000);
@@ -225,6 +253,7 @@ export async function POST(request: Request) {
           const detail = await apiResponse.text();
           throw new Error(`研究模型调用失败（${apiResponse.status}）：${detail.slice(0, 500)}`);
         }
+        markUpstreamActivity();
         progress(22, "已连接研究模型，正在规划检索路径");
 
         const reader = apiResponse.body.getReader();
@@ -279,6 +308,7 @@ export async function POST(request: Request) {
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
+          if (value?.byteLength) markUpstreamActivity();
           buffer += decoder.decode(value, { stream: true });
           const parsed = splitSseBlocks(buffer);
           buffer = parsed.rest;
@@ -294,13 +324,18 @@ export async function POST(request: Request) {
       } catch (error) {
         const aborted = upstreamController.signal.aborted;
         const reason = upstreamController.signal.reason;
-        const message = aborted
-          ? reason === "research_timeout" ? "研究任务超过20分钟，已自动终止。请缩小研究范围后重试。" : "研究任务已中止。"
-          : error instanceof Error ? error.message : "研究任务失败";
+        const message = !aborted
+          ? error instanceof Error ? error.message : "研究任务失败"
+          : reason === "research_inactivity_timeout"
+            ? `连续${inactivityTimeoutMinutes}分钟未收到模型数据，任务已自动终止。请检查网络或稍后重试。`
+            : reason === "research_total_timeout"
+              ? `研究任务已达到${totalTimeoutMinutes}分钟总时限并自动终止。建议缩小研究范围或使用局部更新模式。`
+              : "研究任务已中止。";
         safeEmit({ type: "error", error: message });
       } finally {
         if (heartbeat) clearInterval(heartbeat);
-        clearTimeout(timeout);
+        if (inactivityTimeout) clearTimeout(inactivityTimeout);
+        clearTimeout(totalTimeout);
         request.signal.removeEventListener("abort", onDisconnect);
         if (!closed) { closed = true; controller.close(); }
       }

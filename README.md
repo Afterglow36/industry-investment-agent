@@ -11,6 +11,8 @@ DASHSCOPE_API_KEY=sk-sp-你的TokenPlan密钥
 DASHSCOPE_BASE_URL=https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
 QWEN_MODEL=qwen3.8-max
 QWEN_MAX_OUTPUT_TOKENS=65536
+RESEARCH_TOTAL_TIMEOUT_MINUTES=60
+RESEARCH_INACTIVITY_TIMEOUT_MINUTES=5
 ```
 
 然后运行：
@@ -31,6 +33,8 @@ DASHSCOPE_API_KEY=sk-你的普通百炼APIKey
 DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 QWEN_MODEL=qwen3.8-max
 QWEN_MAX_OUTPUT_TOKENS=65536
+RESEARCH_TOTAL_TIMEOUT_MINUTES=60
+RESEARCH_INACTIVITY_TIMEOUT_MINUTES=5
 ```
 
 密钥文件 `.env.local` 已被 Git 忽略，不要把真实密钥提交到版本库。
