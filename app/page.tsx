@@ -73,7 +73,7 @@ export default function Home() {
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
-  useEffect(() => { if (tasks.length) localStorage.setItem("industry-research-tasks-v2", JSON.stringify(tasks.slice(0, 12))); }, [tasks]);
+  useEffect(() => { localStorage.setItem("industry-research-tasks-v2", JSON.stringify(tasks.slice(0, 12))); }, [tasks]);
 
   const selectedTask = tasks.find(t => t.id === selectedId);
   const result = selectedId === sample.meta.taskId ? sample : selectedTask?.result;
@@ -82,6 +82,13 @@ export default function Home() {
   const totalRecords = result ? result.lists.reduce((n, l) => n + l.items.length, 0) + result.sources.length : 0;
 
   const upsert = (id: string, patch: Partial<StoredTask>) => setTasks(prev => prev.some(t => t.id === id) ? prev.map(t => t.id === id ? { ...t, ...patch } : t) : prev);
+
+  function deleteFailedTask(task: StoredTask) {
+    if (task.status !== "failed") return;
+    if (!window.confirm(`删除“${task.industry} · ${task.region}”失败记录？保存的恢复检查点也会一并清除。`)) return;
+    setTasks(prev => prev.filter(item => item.id !== task.id));
+    if (selectedId === task.id) setSelectedId(sample.meta.taskId);
+  }
 
   async function runResearch(mode: "full" | "update", scope?: Scope, resumeTask?: StoredTask) {
     const base = mode === "update" && activeTask?.result ? activeTask : undefined;
@@ -148,7 +155,7 @@ export default function Home() {
     <aside className="task-sidebar">
       <div className="sidebar-title"><span>RESEARCH TASKS</span><button onClick={() => setShowCreate(true)}>＋</button></div>
       <button className={`task-card ${selectedId === sample.meta.taskId ? "active" : ""}`} onClick={() => setSelectedId(sample.meta.taskId)}><div><Badge tone="orange">示范</Badge><small>已完成</small></div><strong>养老机器人</strong><span>湖北省 · 增强四图五清单</span><i><em style={{ width: "100%" }} /></i></button>
-      {tasks.map(task => <button key={task.id} className={`task-card ${selectedId === task.id ? "active" : ""}`} onClick={() => setSelectedId(task.id)}><div><Badge tone={task.status === "completed" ? "blue" : task.status === "failed" ? "red" : "orange"}>{task.status === "completed" ? "完成" : task.status === "failed" ? "失败" : "研究中"}</Badge><small>{task.provider === "qwen" ? "QWEN" : "OPENAI"} · {task.progress}%</small></div><strong>{task.industry}</strong><span>{task.region} · {task.fileNames.length}份材料</span><i><em style={{ width: `${task.progress}%` }} /></i></button>)}
+      {tasks.map(task => <div key={task.id} className={`task-card-shell ${task.status === "failed" ? "has-delete" : ""}`}><button className={`task-card ${selectedId === task.id ? "active" : ""}`} onClick={() => setSelectedId(task.id)}><div><Badge tone={task.status === "completed" ? "blue" : task.status === "failed" ? "red" : "orange"}>{task.status === "completed" ? "完成" : task.status === "failed" ? "失败" : "研究中"}</Badge><small>{task.provider === "qwen" ? "QWEN" : "OPENAI"} · {task.progress}%</small></div><strong>{task.industry}</strong><span>{task.region} · {task.fileNames.length}份材料</span><i><em style={{ width: `${task.progress}%` }} /></i></button>{task.status === "failed" && <button className="task-delete" aria-label={`删除${task.industry}失败任务`} title="删除失败记录" onClick={() => deleteFailedTask(task)}>删除</button>}</div>)}
       <div className="sidebar-note"><i />研究结果保存在当前浏览器；内部材料仅随本次研究请求发送。</div>
     </aside>
 
