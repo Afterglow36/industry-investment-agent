@@ -1,5 +1,15 @@
 export const runtime = "edge";
 
+import { getSseData, splitSseBlocks } from "../../../lib/sse";
+
+const DASHSCOPE_PAY_AS_YOU_GO_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
+const DASHSCOPE_TOKEN_PLAN_BASE_URL = "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1";
+
+function isLocalRequest(request: Request) {
+  const hostname = new URL(request.url).hostname;
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+}
+
 const itemSchema = {
   type: "object",
   additionalProperties: false,
@@ -50,6 +60,16 @@ function emit(controller: ReadableStreamDefaultController, encoder: TextEncoder,
   controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
 }
 
+function completedResponseText(response: Record<string, unknown> | undefined) {
+  if (!response || !Array.isArray(response.output)) return "";
+  return response.output.flatMap(item => {
+    if (!item || typeof item !== "object" || !Array.isArray((item as { content?: unknown }).content)) return [];
+    return (item as { content: Array<{ type?: string; text?: string }> }).content
+      .filter(part => part?.type === "output_text" && typeof part.text === "string")
+      .map(part => part.text || "");
+  }).join("");
+}
+
 function parseReport(raw: string) {
   const clean = raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
   try { return JSON.parse(clean); } catch {
@@ -80,11 +100,50 @@ export async function POST(request: Request) {
     return Response.json({ error: `真实研究后端尚未配置 ${keyName}。请在 Sites 的服务端环境变量中添加秘密变量。`, code: "MODEL_NOT_CONFIGURED" }, { status: 503 });
   }
 
+  const usesTokenPlan = provider === "qwen" && apiKey.startsWith("sk-sp-");
+  const qwenBaseUrl = (process.env.DASHSCOPE_BASE_URL || (usesTokenPlan ? DASHSCOPE_TOKEN_PLAN_BASE_URL : DASHSCOPE_PAY_AS_YOU_GO_BASE_URL)).replace(/\/$/, "");
+  if (provider === "qwen" && usesTokenPlan && qwenBaseUrl !== DASHSCOPE_TOKEN_PLAN_BASE_URL) {
+    return Response.json({
+      error: "检测到 Token Plan 专属 API Key（sk-sp-），但 DASHSCOPE_BASE_URL 不是 Token Plan 专属地址。请改为 https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1。",
+      code: "TOKEN_PLAN_BASE_URL_MISMATCH",
+    }, { status: 503 });
+  }
+  if (provider === "qwen" && !usesTokenPlan && qwenBaseUrl === DASHSCOPE_TOKEN_PLAN_BASE_URL) {
+    return Response.json({
+      error: "Token Plan 专属地址必须与 sk-sp- 开头的 Token Plan API Key 配套使用。",
+      code: "DASHSCOPE_BASE_URL_MISMATCH",
+    }, { status: 503 });
+  }
+  if (usesTokenPlan && !isLocalRequest(request)) {
+    return Response.json({
+      error: "Token Plan 模式仅开放给本机交互式研究。公开展示站不能使用个人 Token Plan 密钥代调用模型，请在 localhost 运行本项目。",
+      code: "TOKEN_PLAN_LOCAL_ONLY",
+    }, { status: 403 });
+  }
+
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
+      const upstreamController = new AbortController();
+      const onDisconnect = () => upstreamController.abort("client_disconnected");
+      request.signal.addEventListener("abort", onDisconnect, { once: true });
+      const timeout = setTimeout(() => upstreamController.abort("research_timeout"), 20 * 60 * 1000);
+      let heartbeat: ReturnType<typeof setInterval> | undefined;
+      let currentProgress = 0;
+      let currentStage = "";
+      let closed = false;
+      const startedAt = Date.now();
+      const safeEmit = (payload: unknown) => {
+        if (closed) return;
+        try { emit(controller, encoder, payload); } catch { closed = true; }
+      };
+      const progress = (value: number, stage: string) => {
+        currentProgress = Math.max(currentProgress, value);
+        currentStage = stage;
+        safeEmit({ type: "progress", progress: currentProgress, stage });
+      };
       try {
-        emit(controller, encoder, { type: "progress", progress: 4, stage: "任务已进入研究队列" });
+        progress(4, "任务已进入研究队列");
         const content: Array<Record<string, unknown>> = [{
           type: "input_text",
           text: `${mode === "update" ? `对既有研究进行局部更新，范围：${updateScope}。保留未受影响的可靠内容，并更新来源与数据截止日。\n既有研究：${existing.slice(0, 120000)}` : "从零开展完整产业研究。"}\n\n任务ID：${taskId}\n产业：${industry}\n区域：${region}\n实施主体：${entity}\n研究重点：${focus}\n当前日期：${new Date().toISOString().slice(0, 10)}\n请使用web检索获得最新可核验信息。`,
@@ -103,11 +162,11 @@ export async function POST(request: Request) {
             content.push({ type: "input_file", filename: file.name, file_data: `data:${file.type || "application/octet-stream"};base64,${btoa(binary)}` });
           }
         }
-        if (files.length) emit(controller, encoder, { type: "progress", progress: 14, stage: `已读取 ${files.length} 份内部材料` });
-        else emit(controller, encoder, { type: "progress", progress: 14, stage: "已确认研究边界与输出结构" });
+        if (files.length) progress(14, `已读取 ${files.length} 份内部材料`);
+        else progress(14, "已确认研究边界与输出结构");
 
         const endpoint = provider === "qwen"
-          ? `${(process.env.DASHSCOPE_BASE_URL || "https://dashscope.aliyuncs.com/compatible-mode/v1").replace(/\/$/, "")}/responses`
+          ? `${qwenBaseUrl}/responses`
           : "https://api.openai.com/v1/responses";
         const sharedInput = [{ role: "user", content }];
         const qwenBody = {
@@ -136,61 +195,100 @@ export async function POST(request: Request) {
           store: false,
           prompt_cache_key: "industry-investment-agent-v2",
         };
+        progress(18, "已提交研究请求，等待模型响应");
+        heartbeat = setInterval(() => {
+          const elapsedMinutes = Math.max(1, Math.floor((Date.now() - startedAt) / 60000));
+          safeEmit({
+            type: "progress",
+            progress: currentProgress,
+            stage: `${currentStage} · 已运行 ${elapsedMinutes} 分钟`,
+            heartbeat: true,
+          });
+        }, 15000);
         const apiResponse = await fetch(endpoint, {
           method: "POST",
           headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
           body: JSON.stringify(provider === "qwen" ? qwenBody : openaiBody),
+          signal: upstreamController.signal,
         });
         if (!apiResponse.ok || !apiResponse.body) {
           const detail = await apiResponse.text();
           throw new Error(`研究模型调用失败（${apiResponse.status}）：${detail.slice(0, 500)}`);
         }
+        progress(22, "已连接研究模型，正在规划检索路径");
 
         const reader = apiResponse.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
         let output = "";
         let searches = 0;
+        const searchIds = new Set<string>();
+        const handleEvent = (event: Record<string, any>) => {
+          if (event.type === "response.created" || event.type === "response.in_progress") {
+            progress(24, "模型正在分析任务并规划检索");
+          } else if (event.type === "response.reasoning_text.delta") {
+            progress(26, "模型正在推理并拆解研究问题");
+          } else if (event.type === "response.web_search_call.searching" || event.type === "response.web_search_call.in_progress") {
+            const searchId = String(event.item_id || event.output_index || searches + 1);
+            if (!searchIds.has(searchId)) { searchIds.add(searchId); searches++; }
+            progress(Math.min(28 + searches * 4, 64), `正在进行第 ${Math.max(searches, 1)} 轮证据检索`);
+          } else if (event.type === "response.web_search_call.completed") {
+            progress(Math.min(40 + Math.max(searches, 1) * 4, 72), "已核验一组公开来源");
+          } else if (event.type === "response.output_item.added" && event.item?.type === "web_extractor_call") {
+            progress(Math.min(58 + searches * 3, 78), "正在读取网页正文");
+          } else if (event.type === "response.output_item.done" && event.item?.type === "web_extractor_call") {
+            progress(Math.min(62 + searches * 3, 80), "已提取并核验网页证据");
+          } else if (event.type?.startsWith("response.code_interpreter_call.")) {
+            progress(80, "正在计算评分与经济性指标");
+          } else if (event.type === "response.output_text.delta") {
+            output += event.delta || "";
+            progress(Math.min(82 + Math.floor(output.length / 4000), 93), "正在构建四图五清单与评分数据库");
+          } else if (event.type === "response.output_text.done" && !output && typeof event.text === "string") {
+            output = event.text;
+          } else if (event.type === "response.completed") {
+            if (!output) output = completedResponseText(event.response);
+            progress(94, "模型研究完成，正在校验结构化结果");
+          } else if (event.type === "response.incomplete") {
+            throw new Error(event.response?.incomplete_details?.reason || "模型输出未完整完成，请缩小研究范围后重试");
+          } else if (event.type === "response.failed") {
+            throw new Error(event.response?.error?.message || "模型研究失败");
+          }
+        };
+        const processBlock = (block: string) => {
+          const data = getSseData(block);
+          if (!data || data === "[DONE]") return;
+          try { handleEvent(JSON.parse(data)); } catch (error) {
+            if (error instanceof SyntaxError) return;
+            throw error;
+          }
+        };
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
           buffer += decoder.decode(value, { stream: true });
-          const blocks = buffer.split("\n\n");
-          buffer = blocks.pop() || "";
-          for (const block of blocks) {
-            const dataLine = block.split("\n").find(line => line.startsWith("data: "));
-            if (!dataLine || dataLine === "data: [DONE]") continue;
-            try {
-              const event = JSON.parse(dataLine.slice(6));
-              if (event.type === "response.web_search_call.searching" || event.type === "response.web_search_call.in_progress") {
-                searches++;
-                emit(controller, encoder, { type: "progress", progress: Math.min(28 + searches * 4, 64), stage: `正在进行第 ${searches} 轮证据检索` });
-              } else if (event.type === "response.web_search_call.completed") {
-                emit(controller, encoder, { type: "progress", progress: Math.min(40 + searches * 4, 72), stage: "已核验一组公开来源" });
-              } else if (event.type === "response.web_extractor_call.in_progress" || event.type === "response.web_extractor_call.completed") {
-                emit(controller, encoder, { type: "progress", progress: Math.min(58 + searches * 3, 78), stage: "正在读取并核验网页正文" });
-              } else if (event.type === "response.code_interpreter_call.in_progress") {
-                emit(controller, encoder, { type: "progress", progress: 80, stage: "正在计算评分与经济性指标" });
-              } else if (event.type === "response.output_text.delta") {
-                output += event.delta || "";
-                if (output.length % 5000 < 500) emit(controller, encoder, { type: "progress", progress: Math.min(76 + Math.floor(output.length / 4000), 92), stage: "正在构建四图五清单与评分数据库" });
-              } else if (event.type === "response.failed") {
-                throw new Error(event.response?.error?.message || "模型研究失败");
-              }
-            } catch (error) {
-              if (error instanceof SyntaxError) continue;
-              throw error;
-            }
-          }
+          const parsed = splitSseBlocks(buffer);
+          buffer = parsed.rest;
+          parsed.blocks.forEach(processBlock);
         }
+        buffer += decoder.decode();
+        if (buffer.trim()) processBlock(buffer);
+        if (!output.trim()) throw new Error("模型连接已结束，但没有返回研究结果，请重试");
         const report = parseReport(output);
         report.meta = { ...report.meta, taskId, industry, region, entity, mode, cutoff: new Date().toISOString().slice(0, 10), generatedAt: new Date().toISOString() };
-        emit(controller, encoder, { type: "progress", progress: 96, stage: "正在生成数据库与PPT结构" });
-        emit(controller, encoder, { type: "result", progress: 100, stage: "研究完成，可下载数据库和PPT", result: report });
+        progress(96, "正在生成数据库与PPT结构");
+        safeEmit({ type: "result", progress: 100, stage: "研究完成，可下载数据库和PPT", result: report });
       } catch (error) {
-        emit(controller, encoder, { type: "error", error: error instanceof Error ? error.message : "研究任务失败" });
+        const aborted = upstreamController.signal.aborted;
+        const reason = upstreamController.signal.reason;
+        const message = aborted
+          ? reason === "research_timeout" ? "研究任务超过20分钟，已自动终止。请缩小研究范围后重试。" : "研究任务已中止。"
+          : error instanceof Error ? error.message : "研究任务失败";
+        safeEmit({ type: "error", error: message });
       } finally {
-        controller.close();
+        if (heartbeat) clearInterval(heartbeat);
+        clearTimeout(timeout);
+        request.signal.removeEventListener("abort", onDisconnect);
+        if (!closed) { closed = true; controller.close(); }
       }
     },
   });

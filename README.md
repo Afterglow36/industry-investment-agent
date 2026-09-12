@@ -1,14 +1,49 @@
-# vinext-starter
+# 产业投资研究 Agent 展示网站
+
+支持创建任意产业研究任务、查看实时进度、上传内部材料，并生成可下载的研究数据库和 PPTX。
+
+## Token Plan 本地模式
+
+Token Plan 密钥以 `sk-sp-` 开头，必须与专属 Base URL 配套。复制 `.env.example` 为 `.env.local`，填写自己的密钥：
+
+```env
+DASHSCOPE_API_KEY=sk-sp-你的TokenPlan密钥
+DASHSCOPE_BASE_URL=https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
+QWEN_MODEL=qwen3.8-max
+```
+
+然后运行：
+
+```bash
+npm install
+npm run dev
+```
+
+打开 `http://localhost:3000` 创建研究任务。
+
+Token Plan 模式在本项目中被限制为本机交互式使用。公开展示站可以展示界面和案例，但不会使用 Token Plan 密钥对外提供模型代调用。若需要公开部署真实研究后端，请改用按量付费 API Key。
+
+## 按量付费模式
+
+```env
+DASHSCOPE_API_KEY=sk-你的普通百炼APIKey
+DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+QWEN_MODEL=qwen3.8-max
+```
+
+密钥文件 `.env.local` 已被 Git 忽略，不要把真实密钥提交到版本库。
+
+## 开发命令
 
 A clean full-stack starter running on
 [vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
 Drizzle support.
 
-## Prerequisites
+### 环境要求
 
 - Node.js `>=22.13.0`
 
-## Quick Start
+### 启动与检查
 
 ```bash
 npm install
@@ -18,7 +53,7 @@ npm run build
 
 This starter does not use `wrangler.jsonc`.
 
-## Included Shape
+### 项目结构
 
 - edit site code under `app/`
 - `.openai/hosting.json` declares optional Sites D1 and R2 bindings

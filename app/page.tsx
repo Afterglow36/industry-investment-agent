@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { downloadPptx, downloadXlsx } from "../lib/office";
 import type { ResearchResult, StoredTask } from "../lib/research-types";
+import { getSseData, splitSseBlocks } from "../lib/sse";
 
 type Scope = "企业" | "政策" | "项目";
 const phases = ["定义边界", "读取材料", "公开检索", "证据核验", "四图五清单", "生成成果"];
@@ -51,10 +52,20 @@ export default function Home() {
   const [source, setSource] = useState<ResearchResult["sources"][number] | null>(null);
   const [busy, setBusy] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  const activeRequest = useRef<AbortController | null>(null);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      try { setTasks(JSON.parse(localStorage.getItem("industry-research-tasks-v2") || "[]")); } catch { setTasks([]); }
+      try {
+        const restored: StoredTask[] = JSON.parse(localStorage.getItem("industry-research-tasks-v2") || "[]");
+        setTasks(restored.map(task => task.status === "running" ? {
+          ...task,
+          status: "failed",
+          stage: "任务已中断",
+          error: "页面刷新或研究服务重启后，原实时连接已断开。请重新运行该任务。",
+          updatedAt: new Date().toISOString(),
+        } : task));
+      } catch { setTasks([]); }
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);
@@ -81,25 +92,36 @@ export default function Home() {
     if (scope) body.set("updateScope", scope);
     if (base?.result) body.set("existing", JSON.stringify(base.result));
     files.forEach(file => body.append("files", file));
+    const requestController = new AbortController();
+    activeRequest.current = requestController;
     try {
-      const response = await fetch("/api/research", { method: "POST", body });
+      const response = await fetch("/api/research", { method: "POST", body, signal: requestController.signal });
       if (!response.ok || !response.body) { const err = await response.json().catch(() => ({})); throw new Error(err.error || `请求失败（${response.status}）`); }
       const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = "";
+      let terminalEvent = false;
+      const processBlock = (block: string) => {
+        const data = getSseData(block); if (!data || data === "[DONE]") return;
+        const event = JSON.parse(data);
+        if (event.type === "progress") upsert(id, { progress: event.progress, stage: event.stage, updatedAt: new Date().toISOString() });
+        if (event.type === "result") { terminalEvent = true; upsert(id, { status: "completed", progress: 100, stage: event.stage, result: event.result, updatedAt: new Date().toISOString() }); }
+        if (event.type === "error") { terminalEvent = true; throw new Error(event.error); }
+      };
       while (true) {
         const { done, value } = await reader.read(); if (done) break;
         buffer += decoder.decode(value, { stream: true });
-        const blocks = buffer.split("\n\n"); buffer = blocks.pop() || "";
-        for (const block of blocks) {
-          const line = block.split("\n").find(v => v.startsWith("data: ")); if (!line) continue;
-          const event = JSON.parse(line.slice(6));
-          if (event.type === "progress") upsert(id, { progress: event.progress, stage: event.stage, updatedAt: new Date().toISOString() });
-          if (event.type === "result") upsert(id, { status: "completed", progress: 100, stage: event.stage, result: event.result, updatedAt: new Date().toISOString() });
-          if (event.type === "error") throw new Error(event.error);
-        }
+        const parsed = splitSseBlocks(buffer); buffer = parsed.rest;
+        parsed.blocks.forEach(processBlock);
       }
+      buffer += decoder.decode();
+      if (buffer.trim()) processBlock(buffer);
+      if (!terminalEvent) throw new Error("研究连接提前结束，请重新运行任务");
     } catch (error) {
-      upsert(id, { status: "failed", stage: "任务失败", error: error instanceof Error ? error.message : "任务失败", updatedAt: new Date().toISOString() });
-    } finally { setBusy(false); setFiles([]); }
+      const cancelled = requestController.signal.aborted;
+      upsert(id, { status: "failed", stage: cancelled ? "任务已终止" : "任务失败", error: cancelled ? "你已终止本次研究，可调整范围后重新运行。" : error instanceof Error ? error.message : "任务失败", updatedAt: new Date().toISOString() });
+    } finally {
+      if (activeRequest.current === requestController) activeRequest.current = null;
+      setBusy(false); setFiles([]);
+    }
   }
 
   const stageIndex = useMemo(() => Math.min(phases.length - 1, Math.floor((activeTask?.progress || 0) / 18)), [activeTask?.progress]);
@@ -121,7 +143,7 @@ export default function Home() {
       {!activeTask ? <div className="empty-state"><span>研</span><h1>开始一项新的产业研究</h1><p>支持任意产业、任意区域和不同投资主体。</p><button className="primary-button" onClick={() => setShowCreate(true)}>创建研究任务</button></div> : <>
         <div className="workspace-head"><div><div className="eyebrow"><Badge tone={activeTask.status === "completed" ? "blue" : activeTask.status === "failed" ? "red" : "orange"}>{activeTask.status === "completed" ? "研究已完成" : activeTask.status === "failed" ? "需要处理" : "Agent 正在运行"}</Badge><span>{activeTask.id} · {activeTask.provider === "qwen" ? "Qwen3.8-Max" : activeTask.id === "sample-storage" ? "示范数据" : "OpenAI"}</span></div><h1>{activeTask.industry}<small>产业投资研究</small></h1><p>{activeTask.region} · {activeTask.entity}</p></div><div className="head-actions">{result && <><button className="outline-button" onClick={() => downloadXlsx(result)}>下载数据库 .xlsx</button><button className="primary-button" onClick={() => downloadPptx(result)}>直接生成 PPTX ↘</button></>}</div></div>
 
-        {activeTask.status !== "completed" && <section className="run-panel"><div className="run-status"><div className={`agent-orb ${activeTask.status}`}><span>研</span></div><div><small>{activeTask.provider === "qwen" ? "QWEN3.8-MAX" : "OPENAI"} · 当前阶段</small><h2>{activeTask.stage}</h2><p>{activeTask.error || "研究过程会实时回传检索、核验和结构化进度。"}</p></div><strong>{activeTask.progress}%</strong></div><div className="master-progress"><i style={{ width: `${activeTask.progress}%` }} /></div><div className="phase-track">{phases.map((p, i) => <div className={i <= stageIndex ? "done" : ""} key={p}><span>{i < stageIndex ? "✓" : `0${i + 1}`}</span><b>{p}</b></div>)}</div>{activeTask.status === "failed" && <button className="outline-button retry" onClick={() => { setForm({ ...form, industry: activeTask.industry, region: activeTask.region, entity: activeTask.entity, provider: activeTask.provider || "openai" }); setShowCreate(true); }}>修改配置后重试</button>}</section>}
+        {activeTask.status !== "completed" && <section className="run-panel"><div className="run-status"><div className={`agent-orb ${activeTask.status}`}><span>研</span></div><div><small>{activeTask.provider === "qwen" ? "QWEN3.8-MAX" : "OPENAI"} · 当前阶段</small><h2>{activeTask.stage}</h2><p>{activeTask.error || "研究过程会实时回传检索、核验和结构化进度。"}</p></div><strong>{activeTask.progress}%</strong></div><div className="master-progress"><i style={{ width: `${activeTask.progress}%` }} /></div><div className="phase-track">{phases.map((p, i) => <div className={i <= stageIndex ? "done" : ""} key={p}><span>{i < stageIndex ? "✓" : `0${i + 1}`}</span><b>{p}</b></div>)}</div>{activeTask.status === "running" && busy && <button className="outline-button retry" onClick={() => activeRequest.current?.abort()}>终止本次任务</button>}{activeTask.status === "failed" && <button className="outline-button retry" onClick={() => { setForm({ ...form, industry: activeTask.industry, region: activeTask.region, entity: activeTask.entity, provider: activeTask.provider || "openai" }); setShowCreate(true); }}>修改配置后重试</button>}</section>}
 
         {result && <>
           <section className="decision-hero"><div><span>DECISION BRIEF</span><h2>{result.executiveSummary}</h2></div><div className="research-metrics"><div><strong>4</strong><span>决策图谱</span></div><div><strong>5</strong><span>管理清单</span></div><div><strong>{totalRecords}</strong><span>结构化记录</span></div><div><strong>{result.sources.length}</strong><span>可追溯来源</span></div></div></section>
