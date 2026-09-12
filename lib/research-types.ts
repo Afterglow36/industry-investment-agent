@@ -69,4 +69,6 @@ export type StoredTask = {
   fileNames: string[];
   result?: ResearchResult;
   error?: string;
+  /** Last complete model draft, stored locally so formatting failures can resume without re-searching. */
+  recoveryDraft?: string;
 };

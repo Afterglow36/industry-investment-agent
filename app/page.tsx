@@ -79,18 +79,24 @@ export default function Home() {
 
   const upsert = (id: string, patch: Partial<StoredTask>) => setTasks(prev => prev.some(t => t.id === id) ? prev.map(t => t.id === id ? { ...t, ...patch } : t) : prev);
 
-  async function runResearch(mode: "full" | "update", scope?: Scope) {
+  async function runResearch(mode: "full" | "update", scope?: Scope, resumeTask?: StoredTask) {
     const base = mode === "update" && activeTask?.result ? activeTask : undefined;
-    const id = base?.id || makeId();
-    const data = base ? { industry: base.industry, region: base.region, entity: base.entity, provider: base.provider || "openai" as const } : form;
+    const id = resumeTask?.id || base?.id || makeId();
+    const data = resumeTask
+      ? { industry: resumeTask.industry, region: resumeTask.region, entity: resumeTask.entity, provider: resumeTask.provider || "openai" as const }
+      : base ? { industry: base.industry, region: base.region, entity: base.entity, provider: base.provider || "openai" as const } : form;
     const now = new Date().toISOString();
-    const task: StoredTask = base ? { ...base, status: "running", progress: 2, stage: `正在更新${scope}`, updatedAt: now } : { id, provider: data.provider, industry: data.industry, region: data.region, entity: data.entity, status: "running", progress: 2, stage: "正在建立研究任务", createdAt: now, updatedAt: now, fileNames: files.map(f => f.name) };
+    const task: StoredTask = resumeTask
+      ? { ...resumeTask, status: "running", progress: 90, stage: "正在从检查点恢复", error: undefined, updatedAt: now }
+      : base ? { ...base, status: "running", progress: 2, stage: `正在更新${scope}`, updatedAt: now }
+      : { id, provider: data.provider, industry: data.industry, region: data.region, entity: data.entity, status: "running", progress: 2, stage: "正在建立研究任务", createdAt: now, updatedAt: now, fileNames: files.map(f => f.name) };
     setTasks(prev => [task, ...prev.filter(t => t.id !== id)]);
     setSelectedId(id); setShowCreate(false); setUpdateScope(null); setBusy(true);
     const body = new FormData();
     body.set("taskId", id); body.set("industry", data.industry); body.set("region", data.region); body.set("entity", data.entity); body.set("provider", data.provider); body.set("mode", mode); body.set("focus", form.focus);
     if (scope) body.set("updateScope", scope);
     if (base?.result) body.set("existing", JSON.stringify(base.result));
+    if (resumeTask?.recoveryDraft) body.set("recoveryDraft", resumeTask.recoveryDraft);
     files.forEach(file => body.append("files", file));
     const requestController = new AbortController();
     activeRequest.current = requestController;
@@ -98,12 +104,15 @@ export default function Home() {
       const response = await fetch("/api/research", { method: "POST", body, signal: requestController.signal });
       if (!response.ok || !response.body) { const err = await response.json().catch(() => ({})); throw new Error(err.error || `请求失败（${response.status}）`); }
       const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = "";
+      let draftBuffer = resumeTask?.recoveryDraft || "";
       let terminalEvent = false;
       const processBlock = (block: string) => {
         const data = getSseData(block); if (!data || data === "[DONE]") return;
         const event = JSON.parse(data);
         if (event.type === "progress") upsert(id, { progress: event.progress, stage: event.stage, updatedAt: new Date().toISOString() });
-        if (event.type === "result") { terminalEvent = true; upsert(id, { status: "completed", progress: 100, stage: event.stage, result: event.result, updatedAt: new Date().toISOString() }); }
+        if (event.type === "checkpoint_delta") { draftBuffer += event.draftDelta || ""; upsert(id, { recoveryDraft: draftBuffer, updatedAt: new Date().toISOString() }); }
+        if (event.type === "checkpoint") upsert(id, { progress: event.progress, stage: event.stage, recoveryDraft: event.draft, updatedAt: new Date().toISOString() });
+        if (event.type === "result") { terminalEvent = true; upsert(id, { status: "completed", progress: 100, stage: event.stage, result: event.result, recoveryDraft: undefined, updatedAt: new Date().toISOString() }); }
         if (event.type === "error") { terminalEvent = true; throw new Error(event.error); }
       };
       while (true) {
@@ -143,7 +152,7 @@ export default function Home() {
       {!activeTask ? <div className="empty-state"><span>研</span><h1>开始一项新的产业研究</h1><p>支持任意产业、任意区域和不同投资主体。</p><button className="primary-button" onClick={() => setShowCreate(true)}>创建研究任务</button></div> : <>
         <div className="workspace-head"><div><div className="eyebrow"><Badge tone={activeTask.status === "completed" ? "blue" : activeTask.status === "failed" ? "red" : "orange"}>{activeTask.status === "completed" ? "研究已完成" : activeTask.status === "failed" ? "需要处理" : "Agent 正在运行"}</Badge><span>{activeTask.id} · {activeTask.provider === "qwen" ? "Qwen3.8-Max" : activeTask.id === "sample-storage" ? "示范数据" : "OpenAI"}</span></div><h1>{activeTask.industry}<small>产业投资研究</small></h1><p>{activeTask.region} · {activeTask.entity}</p></div><div className="head-actions">{result && <><button className="outline-button" onClick={() => downloadXlsx(result)}>下载数据库 .xlsx</button><button className="primary-button" onClick={() => downloadPptx(result)}>直接生成 PPTX ↘</button></>}</div></div>
 
-        {activeTask.status !== "completed" && <section className="run-panel"><div className="run-status"><div className={`agent-orb ${activeTask.status}`}><span>研</span></div><div><small>{activeTask.provider === "qwen" ? "QWEN3.8-MAX" : "OPENAI"} · 当前阶段</small><h2>{activeTask.stage}</h2><p>{activeTask.error || "研究过程会实时回传检索、核验和结构化进度。"}</p></div><strong>{activeTask.progress}%</strong></div><div className="master-progress"><i style={{ width: `${activeTask.progress}%` }} /></div><div className="phase-track">{phases.map((p, i) => <div className={i <= stageIndex ? "done" : ""} key={p}><span>{i < stageIndex ? "✓" : `0${i + 1}`}</span><b>{p}</b></div>)}</div>{activeTask.status === "running" && busy && <button className="outline-button retry" onClick={() => activeRequest.current?.abort()}>终止本次任务</button>}{activeTask.status === "failed" && <button className="outline-button retry" onClick={() => { setForm({ ...form, industry: activeTask.industry, region: activeTask.region, entity: activeTask.entity, provider: activeTask.provider || "openai" }); setShowCreate(true); }}>修改配置后重试</button>}</section>}
+        {activeTask.status !== "completed" && <section className="run-panel"><div className="run-status"><div className={`agent-orb ${activeTask.status}`}><span>研</span></div><div><small>{activeTask.provider === "qwen" ? "QWEN3.8-MAX" : "OPENAI"} · 当前阶段</small><h2>{activeTask.stage}</h2><p>{activeTask.error || "研究过程会实时回传检索、核验和结构化进度。"}</p></div><strong>{activeTask.progress}%</strong></div><div className="master-progress"><i style={{ width: `${activeTask.progress}%` }} /></div><div className="phase-track">{phases.map((p, i) => <div className={i <= stageIndex ? "done" : ""} key={p}><span>{i < stageIndex ? "✓" : `0${i + 1}`}</span><b>{p}</b></div>)}</div>{activeTask.status === "running" && busy && <button className="outline-button retry" onClick={() => activeRequest.current?.abort()}>终止本次任务</button>}{activeTask.status === "failed" && <div className="recovery-actions">{activeTask.recoveryDraft && <button className="primary-button retry" disabled={busy} onClick={() => runResearch("full", undefined, activeTask)}>从94%检查点恢复</button>}<button className="outline-button retry" onClick={() => { setForm({ ...form, industry: activeTask.industry, region: activeTask.region, entity: activeTask.entity, provider: activeTask.provider || "openai" }); setShowCreate(true); }}>修改配置后重试</button></div>}</section>}
 
         {result && <>
           <section className="decision-hero"><div><span>DECISION BRIEF</span><h2>{result.executiveSummary}</h2></div><div className="research-metrics"><div><strong>4</strong><span>决策图谱</span></div><div><strong>5</strong><span>管理清单</span></div><div><strong>{totalRecords}</strong><span>结构化记录</span></div><div><strong>{result.sources.length}</strong><span>可追溯来源</span></div></div></section>

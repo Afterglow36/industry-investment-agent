@@ -92,8 +92,46 @@ function parseReport(raw: string) {
     const start = clean.indexOf("{");
     const end = clean.lastIndexOf("}");
     if (start < 0 || end <= start) throw new Error("模型没有返回可解析的研究数据库，请重试");
-    return JSON.parse(clean.slice(start, end + 1));
+    let candidate = clean.slice(start, end + 1)
+      .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "")
+      .replace(/,\s*([}\]])/g, "$1");
+    // Long model-generated JSON occasionally misses a comma between two values.
+    // Repair only the exact parser position and keep the number of edits bounded.
+    for (let attempt = 0; attempt < 12; attempt++) {
+      try { return JSON.parse(candidate); } catch (error) {
+        const message = error instanceof Error ? error.message : "";
+        const match = message.match(/position\s+(\d+)/i);
+        if (!match || !/Expected ',' or '}'|Expected ',' or ']'/i.test(message)) throw error;
+        const position = Number(match[1]);
+        candidate = `${candidate.slice(0, position)},${candidate.slice(position)}`;
+      }
+    }
+    return JSON.parse(candidate);
   }
+}
+
+async function repairReportWithModel(endpoint: string, apiKey: string, provider: "qwen" | "openai", raw: string) {
+  const prompt = `下面是一份已经完成或基本完成检索的产业研究JSON检查点。修复JSON语法；如果末尾因连接中断而缺失，则按Schema补齐结构。不得重新检索、删减已有事实或改写已有结论；缺少证据的字段标为待核，不得编造。只输出一个JSON对象。\n\nJSON Schema：\n${JSON.stringify(detailedReportSchema)}\n\n待恢复检查点：\n${raw}`;
+  const body = provider === "qwen" ? {
+    model: process.env.QWEN_MODEL || "qwen3.8-max",
+    input: [{ role: "user", content: [{ type: "input_text", text: prompt }] }],
+    enable_thinking: false,
+    max_output_tokens: qwenMaxOutputTokens(),
+    stream: false,
+    store: false,
+  } : {
+    model: process.env.OPENAI_MODEL || "gpt-6-astra",
+    input: [{ role: "user", content: [{ type: "input_text", text: prompt }] }],
+    max_output_tokens: 30000,
+    text: { verbosity: "low", format: { type: "json_schema", name: "repaired_industry_report", strict: true, schema: detailedReportSchema } },
+    store: false,
+  };
+  const response = await fetch(endpoint, { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!response.ok) throw new Error(`检查点修复失败（${response.status}）：${(await response.text()).slice(0, 300)}`);
+  const payload = await response.json() as Record<string, unknown>;
+  const repaired = completedResponseText(payload);
+  if (!repaired) throw new Error("检查点修复没有返回结果");
+  return parseReport(repaired);
 }
 
 export async function POST(request: Request) {
@@ -107,6 +145,7 @@ export async function POST(request: Request) {
   const mode = form.get("mode") === "update" ? "update" : "full";
   const updateScope = String(form.get("updateScope") || "");
   const existing = String(form.get("existing") || "");
+  const recoveryDraft = String(form.get("recoveryDraft") || "").slice(0, 600000);
   const files = form.getAll("files").filter((x): x is File => x instanceof File);
   if (!industry) return Response.json({ error: "请输入目标产业" }, { status: 400 });
 
@@ -175,6 +214,17 @@ export async function POST(request: Request) {
         safeEmit({ type: "progress", progress: currentProgress, stage });
       };
       try {
+        const endpoint = provider === "qwen"
+          ? `${qwenBaseUrl}/responses`
+          : "https://api.openai.com/v1/responses";
+        if (recoveryDraft) {
+          progress(90, "已载入上次检查点，不重复检索");
+          const report = deriveSummaryViews(await repairReportWithModel(endpoint, apiKey, provider, recoveryDraft));
+          report.meta = { ...report.meta, taskId, industry, region, entity, mode, cutoff: new Date().toISOString().slice(0, 10), generatedAt: new Date().toISOString() };
+          progress(96, "检查点修复成功，正在生成数据库与PPT结构");
+          safeEmit({ type: "result", progress: 100, stage: "已从检查点恢复，可下载数据库和PPT", result: report });
+          return;
+        }
         progress(4, "任务已进入研究队列");
         const content: Array<Record<string, unknown>> = [{
           type: "input_text",
@@ -197,9 +247,6 @@ export async function POST(request: Request) {
         if (files.length) progress(14, `已读取 ${files.length} 份内部材料`);
         else progress(14, "已确认研究边界与输出结构");
 
-        const endpoint = provider === "qwen"
-          ? `${qwenBaseUrl}/responses`
-          : "https://api.openai.com/v1/responses";
         const sharedInput = [{ role: "user", content }];
         const qwenBody = {
           model: process.env.QWEN_MODEL || "qwen3.8-max",
@@ -261,6 +308,7 @@ export async function POST(request: Request) {
         const decoder = new TextDecoder();
         let buffer = "";
         let output = "";
+        let checkpointLength = 0;
         let searches = 0;
         const searchIds = new Set<string>();
         const handleEvent = (event: Record<string, any>) => {
@@ -282,6 +330,10 @@ export async function POST(request: Request) {
             progress(80, "正在计算评分与经济性指标");
           } else if (event.type === "response.output_text.delta") {
             output += event.delta || "";
+            if (output.length - checkpointLength >= 12000) {
+              safeEmit({ type: "checkpoint_delta", progress: currentProgress, stage: "已保存阶段性研究检查点", draftDelta: output.slice(checkpointLength) });
+              checkpointLength = output.length;
+            }
             progress(Math.min(82 + Math.floor(output.length / 4000), 93), "正在构建四图五清单与评分数据库");
           } else if (event.type === "response.output_text.done" && !output && typeof event.text === "string") {
             output = event.text;
@@ -318,7 +370,18 @@ export async function POST(request: Request) {
         buffer += decoder.decode();
         if (buffer.trim()) processBlock(buffer);
         if (!output.trim()) throw new Error("模型连接已结束，但没有返回研究结果，请重试");
-        const report = deriveSummaryViews(parseReport(output));
+        if (output.length > checkpointLength) safeEmit({ type: "checkpoint_delta", progress: 94, stage: "已保存最终研究检查点", draftDelta: output.slice(checkpointLength) });
+        // Persist the completed research draft in the browser before validation.
+        // If validation fails, the next request repairs this draft without repeating web research.
+        safeEmit({ type: "checkpoint", progress: 94, stage: "研究草稿已保存，可从此处恢复", draft: output });
+        let parsedReport;
+        try {
+          parsedReport = parseReport(output);
+        } catch {
+          progress(95, "发现JSON格式问题，正在基于检查点自动修复");
+          parsedReport = await repairReportWithModel(endpoint, apiKey, provider, output);
+        }
+        const report = deriveSummaryViews(parsedReport);
         report.meta = { ...report.meta, taskId, industry, region, entity, mode, cutoff: new Date().toISOString().slice(0, 10), generatedAt: new Date().toISOString() };
         progress(96, "正在生成数据库与PPT结构");
         safeEmit({ type: "result", progress: 100, stage: "研究完成，可下载数据库和PPT", result: report });
