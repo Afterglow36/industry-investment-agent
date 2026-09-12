@@ -11,6 +11,7 @@ export type ResearchResult = {
     generatedAt: string;
   };
   executiveSummary: string;
+  database?: Record<string, any>;
   verdicts: Array<{ level: string; title: string; rationale: string; evidenceIds: EvidenceRef }>;
   maps: Array<{
     title: string;
@@ -47,9 +48,11 @@ export type ResearchResult = {
     grade: string;
     sourceType: string;
     used: string;
+    dataNature?: string;
+    verificationStatus?: string;
   }>;
-  dataGaps: Array<{ item: string; impact: string; nextAction: string }>;
-  slides: Array<{ title: string; subtitle: string; bullets: string[]; evidenceIds: EvidenceRef }>;
+  dataGaps: Array<{ id?: string; module?: string; item: string; impact: string; nextAction?: string; priority?: string; method?: string; owner?: string; timing?: string; status?: string }>;
+  slides?: Array<{ title: string; subtitle: string; bullets: string[]; evidenceIds: EvidenceRef }>;
 };
 
 export type StoredTask = {

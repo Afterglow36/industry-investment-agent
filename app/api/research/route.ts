@@ -1,10 +1,11 @@
 export const runtime = "edge";
 
 import { getSseData, splitSseBlocks } from "../../../lib/sse";
+import { deriveSummaryViews, detailedReportSchema, detailedResearchRequirements } from "../../../lib/research-schema";
 
 const DASHSCOPE_PAY_AS_YOU_GO_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
 const DASHSCOPE_TOKEN_PLAN_BASE_URL = "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1";
-const DEFAULT_QWEN_MAX_OUTPUT_TOKENS = 65536;
+const DEFAULT_QWEN_MAX_OUTPUT_TOKENS = 100000;
 const DEFAULT_RESEARCH_TOTAL_TIMEOUT_MINUTES = 60;
 const DEFAULT_RESEARCH_INACTIVITY_TIMEOUT_MINUTES = 5;
 
@@ -202,7 +203,7 @@ export async function POST(request: Request) {
         const sharedInput = [{ role: "user", content }];
         const qwenBody = {
           model: process.env.QWEN_MODEL || "qwen3.8-max",
-          instructions: `${instructions}\n\n你必须只输出一个可被 JSON.parse 解析的JSON对象，不要输出Markdown代码围栏或解释文字。对象必须严格遵循以下JSON Schema并补齐全部必填字段：\n${JSON.stringify(reportSchema)}`,
+          instructions: `${instructions}\n${detailedResearchRequirements}\n\n你必须只输出一个可被 JSON.parse 解析的JSON对象，不要输出Markdown代码围栏或解释文字。对象必须严格遵循以下JSON Schema并补齐全部必填字段：\n${JSON.stringify(detailedReportSchema)}`,
           input: sharedInput,
           tools: [{ type: "web_search" }, { type: "web_extractor" }, { type: "code_interpreter" }],
           tool_choice: "auto",
@@ -216,7 +217,7 @@ export async function POST(request: Request) {
         };
         const openaiBody = {
           model: process.env.OPENAI_MODEL || "gpt-6-astra",
-          instructions,
+          instructions: `${instructions}\n${detailedResearchRequirements}`,
           input: sharedInput,
           tools: [{ type: "web_search", search_context_size: "high" }],
           tool_choice: "auto",
@@ -224,7 +225,7 @@ export async function POST(request: Request) {
           max_tool_calls: 18,
           max_output_tokens: 20000,
           reasoning: { effort: "high" },
-          text: { verbosity: "low", format: { type: "json_schema", name: "industry_investment_report", strict: true, schema: reportSchema } },
+          text: { verbosity: "low", format: { type: "json_schema", name: "industry_investment_report", strict: true, schema: detailedReportSchema } },
           stream: true,
           store: false,
           prompt_cache_key: "industry-investment-agent-v2",
@@ -317,7 +318,7 @@ export async function POST(request: Request) {
         buffer += decoder.decode();
         if (buffer.trim()) processBlock(buffer);
         if (!output.trim()) throw new Error("模型连接已结束，但没有返回研究结果，请重试");
-        const report = parseReport(output);
+        const report = deriveSummaryViews(parseReport(output));
         report.meta = { ...report.meta, taskId, industry, region, entity, mode, cutoff: new Date().toISOString().slice(0, 10), generatedAt: new Date().toISOString() };
         progress(96, "正在生成数据库与PPT结构");
         safeEmit({ type: "result", progress: 100, stage: "研究完成，可下载数据库和PPT", result: report });

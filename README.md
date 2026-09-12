@@ -1,6 +1,6 @@
 # 产业投资研究 Agent 展示网站
 
-支持创建任意产业研究任务、查看实时进度、上传内部材料，并生成可下载的研究数据库和 PPTX。
+支持创建任意产业研究任务、查看实时进度、上传内部材料，并生成包含17张专业底表的研究数据库和25页可编辑决策PPTX。
 
 ## Token Plan 本地模式
 
@@ -10,7 +10,7 @@ Token Plan 密钥以 `sk-sp-` 开头，必须与专属 Base URL 配套。复制 
 DASHSCOPE_API_KEY=sk-sp-你的TokenPlan密钥
 DASHSCOPE_BASE_URL=https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1
 QWEN_MODEL=qwen3.8-max
-QWEN_MAX_OUTPUT_TOKENS=65536
+QWEN_MAX_OUTPUT_TOKENS=100000
 RESEARCH_TOTAL_TIMEOUT_MINUTES=60
 RESEARCH_INACTIVITY_TIMEOUT_MINUTES=5
 ```
@@ -32,7 +32,7 @@ Token Plan 模式在本项目中被限制为本机交互式使用。公开展示
 DASHSCOPE_API_KEY=sk-你的普通百炼APIKey
 DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 QWEN_MODEL=qwen3.8-max
-QWEN_MAX_OUTPUT_TOKENS=65536
+QWEN_MAX_OUTPUT_TOKENS=100000
 RESEARCH_TOTAL_TIMEOUT_MINUTES=60
 RESEARCH_INACTIVITY_TIMEOUT_MINUTES=5
 ```
