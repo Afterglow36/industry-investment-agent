@@ -49,43 +49,43 @@ export const detailedReportSchema = {
         },
         industryChain: objectArray(
           ["id", "layer", "segment", "output", "representatives", "maturity", "barrier", "bottleneck", "impact", "entryMode", "marketProxy", "sourceIds"],
-          { id: { type: "string" }, layer: { type: "string" }, segment: { type: "string" }, output: { type: "string" }, representatives: { type: "string" }, maturity: { type: "string" }, barrier: { type: "string" }, bottleneck: { type: "string" }, impact: { type: "string" }, entryMode: { type: "string" }, marketProxy: { type: "string" }, ...sourceIds }, 12, 35,
+          { id: { type: "string" }, layer: { type: "string" }, segment: { type: "string" }, output: { type: "string" }, representatives: { type: "string" }, maturity: { type: "string" }, barrier: { type: "string" }, bottleneck: { type: "string" }, impact: { type: "string" }, entryMode: { type: "string" }, marketProxy: { type: "string" }, ...sourceIds }, 24, 50,
         ),
         products: objectArray(
           ["id", "track", "product", "company", "user", "task", "scenario", "buyer", "payer", "businessModel", "price", "qualification", "commercialization", "risk", "action", "sourceIds"],
-          { id: { type: "string" }, track: { type: "string" }, product: { type: "string" }, company: { type: "string" }, user: { type: "string" }, task: { type: "string" }, scenario: { type: "string" }, buyer: { type: "string" }, payer: { type: "string" }, businessModel: { type: "string" }, price: { type: "string" }, qualification: { type: "string" }, commercialization: { type: "string" }, risk: { type: "string" }, action: { type: "string" }, ...sourceIds }, 15, 45,
+          { id: { type: "string" }, track: { type: "string" }, product: { type: "string" }, company: { type: "string" }, user: { type: "string" }, task: { type: "string" }, scenario: { type: "string" }, buyer: { type: "string" }, payer: { type: "string" }, businessModel: { type: "string" }, price: { type: "string" }, qualification: { type: "string" }, commercialization: { type: "string" }, risk: { type: "string" }, action: { type: "string" }, ...sourceIds }, 30, 70,
         ),
         marketMetrics: objectArray(
           ["id", "metric", "metricType", "caliber", "region", "year", "value", "unit", "growth", "dataNature", "comparability", "sourceIds"],
-          { id: { type: "string" }, metric: { type: "string" }, metricType: { type: "string" }, caliber: { type: "string" }, region: { type: "string" }, year: { type: "string" }, value: { type: "string" }, unit: { type: "string" }, growth: { type: "string" }, dataNature: { type: "string" }, comparability: { type: "string" }, ...sourceIds }, 10, 35,
+          { id: { type: "string" }, metric: { type: "string" }, metricType: { type: "string" }, caliber: { type: "string" }, region: { type: "string" }, year: { type: "string" }, value: { type: "string" }, unit: { type: "string" }, growth: { type: "string" }, dataNature: { type: "string" }, comparability: { type: "string" }, ...sourceIds }, 20, 50,
         ),
         technologies: objectArray(
           ["id", "layer", "direction", "description", "trl", "penetration", "bottleneck", "gap", "mainstreamTime", "representatives", "verificationMetric", "action", "sourceIds"],
-          { id: { type: "string" }, layer: { type: "string" }, direction: { type: "string" }, description: { type: "string" }, trl: { type: "string" }, penetration: { type: "string" }, bottleneck: { type: "string" }, gap: { type: "string" }, mainstreamTime: { type: "string" }, representatives: { type: "string" }, verificationMetric: { type: "string" }, action: { type: "string" }, ...sourceIds }, 10, 30,
+          { id: { type: "string" }, layer: { type: "string" }, direction: { type: "string" }, description: { type: "string" }, trl: { type: "string" }, penetration: { type: "string" }, bottleneck: { type: "string" }, gap: { type: "string" }, mainstreamTime: { type: "string" }, representatives: { type: "string" }, verificationMetric: { type: "string" }, action: { type: "string" }, ...sourceIds }, 18, 45,
         ),
         regions: objectArray(
           ["id", "tier", "region", "cluster", "enterprises", "research", "platforms", "capital", "manufacturing", "scenarios", "strength", "weakness", "role", "sourceIds"],
-          { id: { type: "string" }, tier: { type: "string" }, region: { type: "string" }, cluster: { type: "string" }, enterprises: { type: "string" }, research: { type: "string" }, platforms: { type: "string" }, capital: { type: "string" }, manufacturing: { type: "string" }, scenarios: { type: "string" }, strength: { type: "string" }, weakness: { type: "string" }, role: { type: "string" }, ...sourceIds }, 8, 25,
+          { id: { type: "string" }, tier: { type: "string" }, region: { type: "string" }, cluster: { type: "string" }, enterprises: { type: "string" }, research: { type: "string" }, platforms: { type: "string" }, capital: { type: "string" }, manufacturing: { type: "string" }, scenarios: { type: "string" }, strength: { type: "string" }, weakness: { type: "string" }, role: { type: "string" }, ...sourceIds }, 15, 35,
         ),
         policies: objectArray(
           ["id", "level", "name", "date", "publisher", "supportObject", "supportMethod", "constraints", "impact", "opportunity", "status", "sourceIds"],
-          { id: { type: "string" }, level: { type: "string" }, name: { type: "string" }, date: { type: "string" }, publisher: { type: "string" }, supportObject: { type: "string" }, supportMethod: { type: "string" }, constraints: { type: "string" }, impact: { type: "string" }, opportunity: { type: "string" }, status: { type: "string" }, ...sourceIds }, 12, 40,
+          { id: { type: "string" }, level: { type: "string" }, name: { type: "string" }, date: { type: "string" }, publisher: { type: "string" }, supportObject: { type: "string" }, supportMethod: { type: "string" }, constraints: { type: "string" }, impact: { type: "string" }, opportunity: { type: "string" }, status: { type: "string" }, ...sourceIds }, 30, 70,
         ),
         enterprises: objectArray(
           ["id", "name", "type", "region", "segment", "products", "technology", "qualification", "commercialEvidence", "financialEvidence", "financing", "shareholders", "collaboration", "risk", "dueDiligence", "sourceIds"],
-          { id: { type: "string" }, name: { type: "string" }, type: { type: "string" }, region: { type: "string" }, segment: { type: "string" }, products: { type: "string" }, technology: { type: "string" }, qualification: { type: "string" }, commercialEvidence: { type: "string" }, financialEvidence: { type: "string" }, financing: { type: "string" }, shareholders: { type: "string" }, collaboration: { type: "string" }, risk: { type: "string" }, dueDiligence: { type: "string" }, ...sourceIds }, 20, 60,
+          { id: { type: "string" }, name: { type: "string" }, type: { type: "string" }, region: { type: "string" }, segment: { type: "string" }, products: { type: "string" }, technology: { type: "string" }, qualification: { type: "string" }, commercialEvidence: { type: "string" }, financialEvidence: { type: "string" }, financing: { type: "string" }, shareholders: { type: "string" }, collaboration: { type: "string" }, risk: { type: "string" }, dueDiligence: { type: "string" }, ...sourceIds }, 45, 90,
         ),
         projects: objectArray(
           ["id", "name", "type", "date", "amount", "participants", "location", "status", "useOfFunds", "value", "request", "risk", "nextAction", "sourceIds"],
-          { id: { type: "string" }, name: { type: "string" }, type: { type: "string" }, date: { type: "string" }, amount: { type: "string" }, participants: { type: "string" }, location: { type: "string" }, status: { type: "string" }, useOfFunds: { type: "string" }, value: { type: "string" }, request: { type: "string" }, risk: { type: "string" }, nextAction: { type: "string" }, ...sourceIds }, 12, 45,
+          { id: { type: "string" }, name: { type: "string" }, type: { type: "string" }, date: { type: "string" }, amount: { type: "string" }, participants: { type: "string" }, location: { type: "string" }, status: { type: "string" }, useOfFunds: { type: "string" }, value: { type: "string" }, request: { type: "string" }, risk: { type: "string" }, nextAction: { type: "string" }, ...sourceIds }, 30, 75,
         ),
         problems: objectArray(
           ["id", "type", "segment", "description", "cause", "impact", "severity", "solution", "owner", "timing", "metric", "restartCondition", "sourceIds"],
-          { id: { type: "string" }, type: { type: "string" }, segment: { type: "string" }, description: { type: "string" }, cause: { type: "string" }, impact: { type: "string" }, severity: { type: "string" }, solution: { type: "string" }, owner: { type: "string" }, timing: { type: "string" }, metric: { type: "string" }, restartCondition: { type: "string" }, ...sourceIds }, 10, 30,
+          { id: { type: "string" }, type: { type: "string" }, segment: { type: "string" }, description: { type: "string" }, cause: { type: "string" }, impact: { type: "string" }, severity: { type: "string" }, solution: { type: "string" }, owner: { type: "string" }, timing: { type: "string" }, metric: { type: "string" }, restartCondition: { type: "string" }, ...sourceIds }, 18, 40,
         ),
         resources: objectArray(
           ["id", "ownership", "name", "type", "location", "evidence", "capacity", "collaboration", "controlBoundary", "verification", "sourceIds"],
-          { id: { type: "string" }, ownership: { type: "string" }, name: { type: "string" }, type: { type: "string" }, location: { type: "string" }, evidence: { type: "string" }, capacity: { type: "string" }, collaboration: { type: "string" }, controlBoundary: { type: "string" }, verification: { type: "string" }, ...sourceIds }, 8, 25,
+          { id: { type: "string" }, ownership: { type: "string" }, name: { type: "string" }, type: { type: "string" }, location: { type: "string" }, evidence: { type: "string" }, capacity: { type: "string" }, collaboration: { type: "string" }, controlBoundary: { type: "string" }, verification: { type: "string" }, ...sourceIds }, 15, 40,
         ),
         scoreWeights: objectArray(
           ["category", "dimension", "weight", "rationale"],
@@ -93,7 +93,7 @@ export const detailedReportSchema = {
         ),
         scoreItems: objectArray(
           ["category", "name", "stage", "dimensions", "total", "coverage", "status", "rationale", "nextAction", "sourceIds"],
-          { category: { type: "string" }, name: { type: "string" }, stage: { type: "string" }, dimensions: objectArray(["dimension", "score", "evidence"], { dimension: { type: "string" }, score: { type: "number", minimum: 0, maximum: 5 }, evidence: { type: "string" } }, 4, 15), total: { type: "number", minimum: 0, maximum: 100 }, coverage: { type: "string" }, status: { type: "string" }, rationale: { type: "string" }, nextAction: { type: "string" }, ...sourceIds }, 12, 30,
+          { category: { type: "string" }, name: { type: "string" }, stage: { type: "string" }, dimensions: objectArray(["dimension", "score", "evidence"], { dimension: { type: "string" }, score: { type: "number", minimum: 0, maximum: 5 }, evidence: { type: "string" } }, 4, 15), total: { type: "number", minimum: 0, maximum: 100 }, coverage: { type: "string" }, status: { type: "string" }, rationale: { type: "string" }, nextAction: { type: "string" }, ...sourceIds }, 30, 80,
         ),
         roiScenarios: objectArray(
           ["id", "scenario", "case", "initialInvestment", "annualRevenue", "annualSavings", "annualOpex", "annualNetBenefit", "paybackYears", "roiOrNpv", "assumptions", "sensitivity", "boundary", "sourceIds"],
@@ -105,23 +105,24 @@ export const detailedReportSchema = {
         ),
         searchLog: objectArray(
           ["queryId", "round", "topic", "query", "preferredSources", "result", "newRecords", "duplication", "evidenceQuality", "saturation"],
-          { queryId: { type: "string" }, round: { type: "string" }, topic: { type: "string" }, query: { type: "string" }, preferredSources: { type: "string" }, result: { type: "string" }, newRecords: { type: "string" }, duplication: { type: "string" }, evidenceQuality: { type: "string" }, saturation: { type: "string" } }, 8, 20,
+          { queryId: { type: "string" }, round: { type: "string" }, topic: { type: "string" }, query: { type: "string" }, preferredSources: { type: "string" }, result: { type: "string" }, newRecords: { type: "string" }, duplication: { type: "string" }, evidenceQuality: { type: "string" }, saturation: { type: "string" } }, 12, 30,
         ),
       },
     },
     sources: objectArray(
       ["id", "title", "publisher", "date", "url", "grade", "sourceType", "used", "dataNature", "verificationStatus"],
-      { id: { type: "string" }, title: { type: "string" }, publisher: { type: "string" }, date: { type: "string" }, url: { type: "string" }, grade: { type: "string" }, sourceType: { type: "string" }, used: { type: "string" }, dataNature: { type: "string" }, verificationStatus: { type: "string" } }, 30, 100,
+      { id: { type: "string" }, title: { type: "string" }, publisher: { type: "string" }, date: { type: "string" }, url: { type: "string" }, grade: { type: "string" }, sourceType: { type: "string" }, used: { type: "string" }, dataNature: { type: "string" }, verificationStatus: { type: "string" } }, 60, 160,
     ),
     dataGaps: objectArray(
       ["id", "module", "item", "impact", "priority", "method", "owner", "timing", "status"],
-      { id: { type: "string" }, module: { type: "string" }, item: { type: "string" }, impact: { type: "string" }, priority: { type: "string" }, method: { type: "string" }, owner: { type: "string" }, timing: { type: "string" }, status: { type: "string" } }, 8, 25,
+      { id: { type: "string" }, module: { type: "string" }, item: { type: "string" }, impact: { type: "string" }, priority: { type: "string" }, method: { type: "string" }, owner: { type: "string" }, timing: { type: "string" }, status: { type: "string" } }, 10, 35,
     ),
   },
 };
 
 export const detailedResearchRequirements = `
 输出必须达到“17张专业底表 + 25页决策PPT”的数据深度，而不是四图五清单摘要：
+- 以养老机器人增强基础数据库为密度基准：产业链≥24、产品≥30、市场指标≥20、技术≥18、区域集群≥15、政策≥30、企业≥45、项目≥30、问题≥18、主体资源≥15、评分对象≥30、来源≥60、检索记录≥12。不得用重复改写或空泛占位凑数。
 - 先完成两轮检索并保留searchLog；全国扫描后深挖核心区域，不得用同一批泛化描述填充不同记录。
 - 企业、产品、项目必须分别建库；企业至少覆盖龙头、成长、配套、本地和风险样本，项目区分已发生、在建、签约、建议和融资事件。
 - 产业链要覆盖基础部件、技术、产品、平台、应用、服务与支付；市场表严格区分产值、收入、出货、预测、合同与订单口径。
