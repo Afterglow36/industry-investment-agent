@@ -43,6 +43,20 @@ const legacyStorageSample: ResearchResult = {
 const sample = eldercareRobotSample;
 void legacyStorageSample;
 
+const eldercareDemoAssets = {
+  xlsx: "/downloads/养老机器人产业基础数据库.xlsx",
+  pptx: "/downloads/养老机器人四图五清单_20260731.pptx",
+};
+
+function downloadStaticAsset(url: string, filename: string) {
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
 function makeId() { return `R-${Date.now().toString(36).toUpperCase()}`; }
 function Badge({ children, tone = "blue" }: { children: React.ReactNode; tone?: string }) { return <span className={`badge badge-${tone}`}>{children}</span>; }
 
@@ -80,6 +94,25 @@ export default function Home() {
   const activeTask = selectedId === sample.meta.taskId ? { id: sample.meta.taskId, industry: sample.meta.industry, region: sample.meta.region, entity: sample.meta.entity, status: "completed" as const, progress: 100, stage: "示范研究已完成", createdAt: sample.meta.generatedAt, updatedAt: sample.meta.generatedAt, fileNames: [], result: sample } : selectedTask;
   const completed = tasks.filter(t => t.status === "completed").length;
   const totalRecords = result ? result.lists.reduce((n, l) => n + l.items.length, 0) + result.sources.length : 0;
+  const isEldercareDemo = activeTask?.id === sample.meta.taskId;
+
+  function exportDatabase() {
+    if (!result) return;
+    if (isEldercareDemo) {
+      downloadStaticAsset(eldercareDemoAssets.xlsx, "养老机器人产业四图五清单_增强基础数据库_20260731.xlsx");
+      return;
+    }
+    downloadXlsx(result);
+  }
+
+  function exportPresentation() {
+    if (!result) return;
+    if (isEldercareDemo) {
+      downloadStaticAsset(eldercareDemoAssets.pptx, "养老机器人四图五清单_20260731.pptx");
+      return;
+    }
+    downloadPptx(result);
+  }
 
   const upsert = (id: string, patch: Partial<StoredTask>) => setTasks(prev => prev.some(t => t.id === id) ? prev.map(t => t.id === id ? { ...t, ...patch } : t) : prev);
 
@@ -161,12 +194,12 @@ export default function Home() {
 
     <section className="workspace">
       {!activeTask ? <div className="empty-state"><span>研</span><h1>开始一项新的产业研究</h1><p>支持任意产业、任意区域和不同投资主体。</p><button className="primary-button" onClick={() => setShowCreate(true)}>创建研究任务</button></div> : <>
-        <div className="workspace-head"><div><div className="eyebrow"><Badge tone={activeTask.status === "completed" ? "blue" : activeTask.status === "failed" ? "red" : "orange"}>{activeTask.status === "completed" ? "研究已完成" : activeTask.status === "failed" ? "需要处理" : "Agent 正在运行"}</Badge><span>{activeTask.id} · {activeTask.provider === "qwen" ? "Qwen3.8-Max" : activeTask.id === sample.meta.taskId ? "增强示范数据" : "OpenAI"}</span></div><h1>{activeTask.industry}<small>产业投资研究</small></h1><p>{activeTask.region} · {activeTask.entity}</p></div><div className="head-actions">{result && <><button className="outline-button" onClick={() => downloadXlsx(result)}>下载数据库 .xlsx</button><button className="primary-button" onClick={() => downloadPptx(result)}>直接生成 PPTX ↘</button></>}</div></div>
+        <div className="workspace-head"><div><div className="eyebrow"><Badge tone={activeTask.status === "completed" ? "blue" : activeTask.status === "failed" ? "red" : "orange"}>{activeTask.status === "completed" ? "研究已完成" : activeTask.status === "failed" ? "需要处理" : "Agent 正在运行"}</Badge><span>{activeTask.id} · {activeTask.provider === "qwen" ? "Qwen3.8-Max" : activeTask.id === sample.meta.taskId ? "原始成果示范" : "OpenAI"}</span></div><h1>{activeTask.industry}<small>产业投资研究</small></h1><p>{activeTask.region} · {activeTask.entity}</p></div><div className="head-actions">{result && <><button className="outline-button" onClick={exportDatabase}>{isEldercareDemo ? "下载原始数据库 .xlsx" : "下载数据库 .xlsx"}</button><button className="primary-button" onClick={exportPresentation}>{isEldercareDemo ? "下载四图五清单 PPTX ↘" : "直接生成 PPTX ↘"}</button></>}</div></div>
 
         {activeTask.status !== "completed" && <section className="run-panel"><div className="run-status"><div className={`agent-orb ${activeTask.status}`}><span>研</span></div><div><small>{activeTask.provider === "qwen" ? "QWEN3.8-MAX" : "OPENAI"} · 当前阶段</small><h2>{activeTask.stage}</h2><p>{activeTask.error || "研究过程会实时回传检索、核验和结构化进度。"}</p></div><strong>{activeTask.progress}%</strong></div><div className="master-progress"><i style={{ width: `${activeTask.progress}%` }} /></div><div className="phase-track">{phases.map((p, i) => <div className={i <= stageIndex ? "done" : ""} key={p}><span>{i < stageIndex ? "✓" : `0${i + 1}`}</span><b>{p}</b></div>)}</div>{activeTask.status === "running" && busy && <button className="outline-button retry" onClick={() => activeRequest.current?.abort()}>终止本次任务</button>}{activeTask.status === "failed" && <div className="recovery-actions">{activeTask.recoveryDraft && <button className="primary-button retry" disabled={busy} onClick={() => runResearch("full", undefined, activeTask)}>从94%检查点恢复</button>}<button className="outline-button retry" onClick={() => { setForm({ ...form, industry: activeTask.industry, region: activeTask.region, entity: activeTask.entity, provider: activeTask.provider || "openai" }); setShowCreate(true); }}>修改配置后重试</button></div>}</section>}
 
         {result && <>
-          <section className="decision-hero"><div><span>DECISION BRIEF</span><h2>{result.executiveSummary}</h2></div><div className="research-metrics"><div><strong>4</strong><span>决策图谱</span></div><div><strong>5</strong><span>管理清单</span></div><div><strong>{totalRecords}</strong><span>结构化记录</span></div><div><strong>{result.sources.length}</strong><span>可追溯来源</span></div></div></section>
+          <section className="decision-hero"><div><span>DECISION BRIEF</span><h2>{result.executiveSummary}</h2></div><div className="research-metrics">{isEldercareDemo ? <><div><strong>17</strong><span>专业底表</span></div><div><strong>25</strong><span>PPT页</span></div><div><strong>66</strong><span>重点企业</span></div><div><strong>113</strong><span>来源记录</span></div></> : <><div><strong>4</strong><span>决策图谱</span></div><div><strong>5</strong><span>管理清单</span></div><div><strong>{totalRecords}</strong><span>结构化记录</span></div><div><strong>{result.sources.length}</strong><span>可追溯来源</span></div></>}</div></section>
           <section className="verdict-grid">{result.verdicts.slice(0, 3).map((v, i) => <article key={v.title} className={i === 0 ? "featured" : ""}><div><span>0{i + 1}</span><Badge tone={i === 0 ? "orange" : "blue"}>{v.level}</Badge></div><h3>{v.title}</h3><p>{v.rationale}</p><small>证据：{v.evidenceIds.join(" · ") || "待核"}</small></article>)}</section>
           <div className="section-heading"><div><span>FOUR MAPS</span><h2>四张图，形成一条判断链</h2></div><p>产业位置 → 应用价值 → 技术窗口 → 区域落点</p></div>
           <section className="maps-grid">{result.maps.map((map, i) => <article key={map.title}><div className="map-num">0{i + 1}</div><h3>{map.title}</h3><p>{map.question}</p><div className="node-row">{map.nodes.slice(0, 4).map(node => <span key={node.label}><b>{node.label}</b><small>{node.detail}</small></span>)}</div><footer><b>主体含义</b>{map.implication}</footer></article>)}</section>
@@ -175,7 +208,7 @@ export default function Home() {
           <section className="update-panel"><div><span>INCREMENTAL UPDATE</span><h2>保持研究常新，不必从头重做</h2><p>复用当前数据库和证据链，更新目标模块后重新生成 Excel 与 PPTX。</p></div><div>{(["企业", "政策", "项目"] as Scope[]).map(scope => <button key={scope} disabled={busy} onClick={() => setUpdateScope(scope)}>更新{scope}<b>→</b></button>)}</div></section>
           <div className="section-heading"><div><span>PROVENANCE</span><h2>证据来源台账</h2></div><p>公开来源与内部材料分级展示。</p></div>
           <section className="source-ledger"><div className="ledger-head"><span>ID</span><span>来源与标题</span><span>用途</span><span>等级</span></div>{result.sources.map(s => <button key={s.id} onClick={() => setSource(s)}><b>{s.id}</b><span><strong>{s.publisher}</strong><small>{s.title} · {s.date}</small></span><em>{s.used}</em><Badge tone={s.sourceType === "内部材料" ? "orange" : "blue"}>{s.grade}级</Badge></button>)}</section>
-          <section className="export-panel"><div><Badge tone="orange">REAL FILE OUTPUT</Badge><h2>17张专业底表与25页可编辑决策PPTX</h2><p>逐页学习养老机器人母版的决策逻辑，覆盖四图及分析、五清单及筛选、主体资源、评分、经济性、风险和行动计划。</p></div><button onClick={() => downloadPptx(result)}>生成并下载 PowerPoint <b>↘</b></button><button onClick={() => downloadXlsx(result)}>生成并下载研究数据库 <b>↘</b></button></section>
+          <section className="export-panel"><div><Badge tone="orange">{isEldercareDemo ? "ORIGINAL RESEARCH OUTPUT" : "REAL FILE OUTPUT"}</Badge><h2>17张专业底表与25页可编辑决策PPTX</h2><p>{isEldercareDemo ? "示范任务直接提供原始增强基础数据库和养老机器人四图五清单成品，完整保留数据密度、逐页逻辑、版式与来源台账。" : "逐页学习养老机器人母版的决策逻辑，覆盖四图及分析、五清单及筛选、主体资源、评分、经济性、风险和行动计划。"}</p></div><button onClick={exportPresentation}>{isEldercareDemo ? "下载原始 PowerPoint" : "生成并下载 PowerPoint"} <b>↘</b></button><button onClick={exportDatabase}>{isEldercareDemo ? "下载原始增强数据库" : "生成并下载研究数据库"} <b>↘</b></button></section>
         </>}
       </>}
     </section>
