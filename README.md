@@ -17,7 +17,9 @@
 
 下面为项目实际网页的完整呈现效果。即使不下载代码、不配置模型 API，也可以先通过该页面了解系统最终的交互形态和研究结果组织方式。
 
-![产业投资研究 Agent 网页完整效果](docs/images/webpage-overview.png)
+<p align="center">
+  <img src="./docs/images/webpage-overview.png" alt="产业投资研究 Agent 网页完整效果">
+</p>
 
 网页主要承担三类功能：
 
