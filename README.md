@@ -1,10 +1,78 @@
-# 产业投资研究 Agent 展示网站
+# 产业投资研究 Agent
 
-支持创建任意产业研究任务、查看实时进度、上传内部材料，并生成包含17张专业底表的研究数据库和25页可编辑决策PPTX。
+一个面向政府产业平台、国有资本、产业集团、园区和市场化基金的产业研究工作台。输入“产业 + 区域 + 实施主体”，Agent 会围绕产业链、应用价值、技术路线和区域布局开展公开检索，形成可追溯的“四图五清单”、研究数据库和可编辑 PowerPoint。
 
-## Token Plan 本地模式
+> 项目中的“湖北省养老机器人”案例来自真实研究成果，用于展示目标数据密度、分析逻辑和交付形式。评分仅用于尽调排序，不构成投资建议。
 
-Token Plan 密钥以 `sk-sp-` 开头，必须与专属 Base URL 配套。复制 `.env.example` 为 `.env.local`，填写自己的密钥：
+## 项目解决什么问题
+
+传统产业研究经常遇到资料散落、过程无法追溯、报告与底层数据脱节等问题。本项目把工作拆成一套可复用流程：
+
+1. 明确产业边界、研究区域和投资主体。
+2. 读取用户上传的内部材料。
+3. 分轮检索政策、企业、项目、技术和区域信息。
+4. 建立来源编号，将事实与证据逐条关联。
+5. 生成四张产业图谱、五张管理清单和评分结果。
+6. 下载结构化 Excel 数据库和可编辑 PPTX。
+
+## 湖北省养老机器人示例
+
+首页内置“湖北省 · 养老机器人”示范任务。该示例直接使用原始研究成果，而不是由网页摘要临时拼装：
+
+- **17 张专业底表**：覆盖产业链、产品、市场、技术、区域、政策、企业、项目、问题、主体资源、评分、场景 ROI、来源索引和数据缺口等。
+- **25 页四图五清单 PPT**：保留原成果的页面顺序、分析逻辑和版式。
+- **66 家重点企业、113 条来源记录**：展示高密度研究应达到的颗粒度。
+
+示范页按钮会直接下载原始 `.xlsx` 和 `.pptx`；其他新建任务则由 Agent 动态研究和生成成果。
+
+## 四图五清单是什么
+
+| 四张图 | 回答的问题 |
+| --- | --- |
+| 产业链全景图 | 产业由哪些环节构成，价值和能力在哪里？ |
+| 应用领域与产品价值图 | 谁使用、谁采购、谁付费？ |
+| 技术路线与投资优先级图 | 哪些技术成熟，哪些仍需项目验证？ |
+| 区域分布与产业布局图 | 目标区域有哪些企业、平台、场景和短板？ |
+
+五张清单包括：产业集群、政策、重点企业、重点项目和产业问题。四张图形成判断链，五张清单把判断落实到可筛选、可跟踪、可更新的对象。
+
+## 主要功能
+
+- 创建任意产业、任意区域的研究任务
+- 实时显示检索、核验和结构化进度
+- 上传内部材料
+- 自动建立来源台账和证据编号
+- 生成高密度产业研究数据库及可编辑 PPTX
+- 单独更新企业、政策或项目模块
+- 保存历史任务并删除失败记录
+- 从检查点恢复，避免重复检索
+- 千问达到 `max_output_tokens` 时自动续写并合并结果
+
+## 研究结果口径
+
+完整研究以养老机器人增强数据库为密度参照，默认目标包括：产业链不少于 24 条、产品不少于 30 条、市场指标不少于 20 条、技术不少于 18 条、区域集群不少于 15 条、政策不少于 30 条、企业不少于 45 家、项目不少于 30 个、评分对象不少于 30 个、来源不少于 60 条。
+
+同时遵守以下原则：
+
+- 不使用重复改写或空泛占位凑数。
+- 公开事实、企业披露、内部材料、研究判断和待核验事项分开标记。
+- 企业、项目、政策等事实记录关联来源 ID。
+- 缺少价格、成本、订单或合同依据时明确列为数据缺口。
+- 高分只表示优先尽调、试点或谈判，不代表投资建议。
+
+## 本地运行
+
+环境要求：Node.js 22.13 或更高版本，以及 npm。
+
+```bash
+npm install
+```
+
+复制 `.env.example` 为 `.env.local`，再根据使用方式填写。不要把真实密钥提交到 GitHub。
+
+### 通义千问 Token Plan
+
+Token Plan 密钥通常以 `sk-sp-` 开头，必须使用专属地址：
 
 ```env
 DASHSCOPE_API_KEY=sk-sp-你的TokenPlan密钥
@@ -15,127 +83,80 @@ RESEARCH_TOTAL_TIMEOUT_MINUTES=60
 RESEARCH_INACTIVITY_TIMEOUT_MINUTES=5
 ```
 
-然后运行：
+Token Plan 在本项目中仅允许本机交互式使用，避免把个人套餐能力作为公开网站的模型代理。
 
-```bash
-npm install
-npm run dev
-```
-
-打开 `http://localhost:3000` 创建研究任务。
-
-Token Plan 模式在本项目中被限制为本机交互式使用。公开展示站可以展示界面和案例，但不会使用 Token Plan 密钥对外提供模型代调用。若需要公开部署真实研究后端，请改用按量付费 API Key。
-
-## 按量付费模式
+### 百炼按量付费
 
 ```env
 DASHSCOPE_API_KEY=sk-你的普通百炼APIKey
 DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 QWEN_MODEL=qwen3.8-max
 QWEN_MAX_OUTPUT_TOKENS=100000
-RESEARCH_TOTAL_TIMEOUT_MINUTES=60
-RESEARCH_INACTIVITY_TIMEOUT_MINUTES=5
 ```
 
-密钥文件 `.env.local` 已被 Git 忽略，不要把真实密钥提交到版本库。
+### OpenAI（可选）
 
-## 开发命令
+```env
+OPENAI_API_KEY=你的OpenAI_API_KEY
+OPENAI_MODEL=gpt-6-astra
+```
 
-A clean full-stack starter running on
-[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
-Drizzle support.
-
-### 环境要求
-
-- Node.js `>=22.13.0`
-
-### 启动与检查
+启动项目：
 
 ```bash
-npm install
 npm run dev
+```
+
+浏览器打开 [http://localhost:3000](http://localhost:3000)。构建检查使用：
+
+```bash
 npm run build
 ```
 
-This starter does not use `wrangler.jsonc`.
+## 如何使用
 
-### 项目结构
+1. 点击“创建研究任务”。
+2. 填写目标产业、核心区域、实施主体和研究重点。
+3. 选择通义千问或 OpenAI。
+4. 按需上传内部材料并启动研究。
+5. 等待 Agent 完成检索、证据核验和结构化。
+6. 查看四图五清单、来源台账，并下载 Excel 与 PPTX。
 
-- edit site code under `app/`
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/schema.ts` starts intentionally empty
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
+如果任务因网络或输出限制失败，优先点击“从检查点恢复”。系统会读取已有草稿并续写缺失部分，不会重做已经完成的公开检索。
 
-## Workspace Auth Headers
+## 项目结构
 
-Signed-in visitors receive both `oai-authenticated-user-id` and `oai-authenticated-user-email`. Private Sites require every visitor to sign in; public Sites may also have anonymous visitors, for whom neither header is present.
-
-The user ID is stable for the same user on the same Site and different across Sites. Email and name are intended for display or contact purposes.
-
-SIWC-authenticated workspace sites may also receive
-`oai-authenticated-user-full-name` when the user's SIWC profile has a non-empty
-`name` claim. The full-name value is percent-encoded UTF-8 and is accompanied by
-`oai-authenticated-user-full-name-encoding: percent-encoded-utf-8`.
-
-Treat the full name as optional and fall back to email when it is absent:
-
-```tsx
-import { headers } from "next/headers";
-
-export default async function Home() {
-  const requestHeaders = await headers();
-  const userId = requestHeaders.get("oai-authenticated-user-id");
-  const email = requestHeaders.get("oai-authenticated-user-email");
-  const encodedFullName = requestHeaders.get("oai-authenticated-user-full-name");
-  const fullName =
-    encodedFullName &&
-    requestHeaders.get("oai-authenticated-user-full-name-encoding") ===
-      "percent-encoded-utf-8"
-      ? decodeURIComponent(encodedFullName)
-      : null;
-
-  const displayName = fullName ?? email;
-  // ...
-}
+```text
+app/
+  page.tsx                  研究工作台与任务状态
+  api/research/route.ts     模型调用、流式进度、检查点和自动续写
+lib/
+  research-schema.ts        数据库结构与验收要求
+  research-types.ts         任务和研究结果类型
+  office.ts                 Excel 与 PowerPoint 生成
+  sample-eldercare-robot.ts 养老机器人示范摘要
+public/downloads/           示范案例原始数据库与 PPT
 ```
 
-## Optional Dispatch-Owned ChatGPT Sign-In
+## 数据与安全
 
-Import the ready-to-use helpers from `app/chatgpt-auth.ts` when the site needs
-optional or required ChatGPT sign-in:
+- `.env.local`、构建文件和运行日志已被 Git 忽略。
+- API Key 仅由服务端读取，不会写入网页代码。
+- 上传材料只随当前研究请求发送，不会进入公开来源台账。
+- 历史任务默认保存在当前浏览器本地存储中。
+- 若公开传播示范材料，请先确认授权和脱敏要求。
 
-- Use `getChatGPTUser()` for optional signed-in UI.
-- Use `requireChatGPTUser(returnTo)` for server-rendered pages that should send
-  anonymous visitors through Sign in with ChatGPT.
-- Use `chatGPTSignInPath(returnTo)` and `chatGPTSignOutPath(returnTo)` for
-  browser links or actions.
-- Pass a same-origin relative `returnTo` path for the destination after sign-in
-  or sign-out. The helper validates and safely encodes it.
-- Mark protected pages with `export const dynamic = "force-dynamic"` because
-  they depend on per-request identity headers.
+## 当前边界
 
-Dispatch owns `/signin-with-chatgpt`, `/signout-with-chatgpt`, `/callback`, the
-OAuth cookies, and identity header injection. Do not implement app routes for
-those reserved paths. Routes that do not import and call the helper remain
-anonymous-compatible.
+- 千问模式直接读取 TXT、Markdown、CSV 和 JSON；复杂文件建议使用 OpenAI 模式，或后续接入百炼知识库。
+- 公开部署需要在托管平台单独配置服务端环境变量。
+- 高密度研究运行时间较长，来源质量和结果完整度仍需人工复核。
+- 自动生成内容用于产业研究和尽调准备，不替代法律、财务或投资决策意见。
 
-SIWC establishes identity only; it does not prove workspace membership. Use the
-Sites hosting platform's access policy controls for workspace-wide restrictions,
-or enforce explicit server-side membership or allowlist checks.
+## 技术栈
 
-Use SIWC for account pages, user-specific dashboards, saved records, and write
-actions tied to the current ChatGPT user. Leave public content anonymous.
+Next.js、React、TypeScript、vinext、Vite、Cloudflare Workers 兼容运行时、通义千问 Responses API、OpenAI Responses API。
 
-## Useful Commands
+## License
 
-- `npm run dev`: start local development
-- `npm run build`: verify the vinext build output
-- `npm test`: build the starter and verify its rendered loading skeleton
-- `npm run db:generate`: generate Drizzle migrations after schema changes
-
-## Learn More
-
-- [vinext Documentation](https://github.com/cloudflare/vinext)
-- [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
+当前项目未附加开源许可证。未经项目所有者明确授权，请勿将示范数据库、PPT 或研究成果用于商业再分发。
