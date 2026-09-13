@@ -134,6 +134,33 @@ async function repairReportWithModel(endpoint: string, apiKey: string, provider:
   return parseReport(repaired);
 }
 
+async function continueTruncatedReport(endpoint: string, apiKey: string, provider: "qwen" | "openai", raw: string) {
+  const prompt = `下面的产业研究JSON因单次最大输出长度而被截断。请从最后一个字符之后继续，补齐尚未完成的字段和所有闭合括号。不要重复已有内容，不要重新检索，不要输出Markdown围栏、解释或“续写如下”等文字；你的第一个字符必须就是可直接拼接到原文末尾的下一个字符。缺失事实标为待核，不得编造。\n\nJSON Schema：\n${JSON.stringify(detailedReportSchema)}\n\n已保存的JSON前缀：\n${raw.slice(-520000)}`;
+  const body = provider === "qwen" ? {
+    model: process.env.QWEN_MODEL || "qwen3.8-max",
+    input: [{ role: "user", content: [{ type: "input_text", text: prompt }] }],
+    enable_thinking: false,
+    max_output_tokens: Math.min(qwenMaxOutputTokens(), 30000),
+    stream: false,
+    store: false,
+  } : {
+    model: process.env.OPENAI_MODEL || "gpt-6-astra",
+    input: [{ role: "user", content: [{ type: "input_text", text: prompt }] }],
+    max_output_tokens: 30000,
+    text: { verbosity: "low" },
+    store: false,
+  };
+  const response = await fetch(endpoint, { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (!response.ok) throw new Error(`截断续写失败（${response.status}）：${(await response.text()).slice(0, 300)}`);
+  const payload = await response.json() as Record<string, any>;
+  const continuation = completedResponseText(payload);
+  if (!continuation) throw new Error("模型没有返回截断内容的续写结果");
+  return {
+    continuation: continuation.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, ""),
+    incomplete: payload.status === "incomplete" || payload.incomplete_details?.reason === "max_output_tokens",
+  };
+}
+
 export async function POST(request: Request) {
   const form = await request.formData();
   const taskId = String(form.get("taskId") || crypto.randomUUID());
@@ -219,7 +246,19 @@ export async function POST(request: Request) {
           : "https://api.openai.com/v1/responses";
         if (recoveryDraft) {
           progress(90, "已载入上次检查点，不重复检索");
-          const report = deriveSummaryViews(await repairReportWithModel(endpoint, apiKey, provider, recoveryDraft));
+          let recoveredDraft = recoveryDraft;
+          let recovered;
+          try { recovered = parseReport(recoveredDraft); } catch {
+            progress(92, "正在从上次截断位置续写，不重复检索");
+            for (let attempt = 0; attempt < 2; attempt++) {
+              const next = await continueTruncatedReport(endpoint, apiKey, provider, recoveredDraft);
+              recoveredDraft += next.continuation;
+              safeEmit({ type: "checkpoint", progress: 94, stage: "续写检查点已保存", draft: recoveredDraft });
+              try { recovered = parseReport(recoveredDraft); break; } catch { if (!next.incomplete && attempt === 1) break; }
+            }
+          }
+          if (!recovered) recovered = await repairReportWithModel(endpoint, apiKey, provider, recoveredDraft);
+          const report = deriveSummaryViews(recovered);
           report.meta = { ...report.meta, taskId, industry, region, entity, mode, cutoff: new Date().toISOString().slice(0, 10), generatedAt: new Date().toISOString() };
           progress(96, "检查点修复成功，正在生成数据库与PPT结构");
           safeEmit({ type: "result", progress: 100, stage: "已从检查点恢复，可下载数据库和PPT", result: report });
@@ -310,6 +349,7 @@ export async function POST(request: Request) {
         let output = "";
         let checkpointLength = 0;
         let searches = 0;
+        let outputWasTruncated = false;
         const searchIds = new Set<string>();
         const handleEvent = (event: Record<string, any>) => {
           if (event.type === "response.created" || event.type === "response.in_progress") {
@@ -343,7 +383,9 @@ export async function POST(request: Request) {
           } else if (event.type === "response.incomplete") {
             const reason = event.response?.incomplete_details?.reason;
             if (reason === "max_output_tokens") {
-              throw new Error("模型已达到本次最大输出长度，未能完成全部四图五清单。系统已提高千问输出额度，请重新运行；若仍出现此提示，请缩小研究重点或改用局部更新模式。");
+              outputWasTruncated = true;
+              progress(93, "单次输出已达上限，正在自动续写剩余内容");
+              return;
             }
             throw new Error(reason ? `模型输出未完整完成（${reason}），请重试` : "模型输出未完整完成，请缩小研究范围后重试");
           } else if (event.type === "response.failed") {
@@ -371,6 +413,15 @@ export async function POST(request: Request) {
         if (buffer.trim()) processBlock(buffer);
         if (!output.trim()) throw new Error("模型连接已结束，但没有返回研究结果，请重试");
         if (output.length > checkpointLength) safeEmit({ type: "checkpoint_delta", progress: 94, stage: "已保存最终研究检查点", draftDelta: output.slice(checkpointLength) });
+        if (outputWasTruncated) {
+          for (let attempt = 0; attempt < 2; attempt++) {
+            progress(93, `正在续写剩余研究内容（${attempt + 1}/2）`);
+            const next = await continueTruncatedReport(endpoint, apiKey, provider, output);
+            output += next.continuation;
+            safeEmit({ type: "checkpoint", progress: 94, stage: "续写检查点已保存，可继续恢复", draft: output });
+            try { parseReport(output); break; } catch { if (!next.incomplete && attempt === 1) break; }
+          }
+        }
         // Persist the completed research draft in the browser before validation.
         // If validation fails, the next request repairs this draft without repeating web research.
         safeEmit({ type: "checkpoint", progress: 94, stage: "研究草稿已保存，可从此处恢复", draft: output });
